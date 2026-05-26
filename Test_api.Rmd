@@ -1,0 +1,257 @@
+---
+title: "Test Api via httr-jsonlite"
+output: html_document
+date: "2026-05-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('httr')
+library('jsonlite')
+library('lubridate')
+```
+Test n°1: 1 point, 1 semaine
+```{r}
+
+url <- "https://archive-api.open-meteo.com/v1/archive"
+
+res <- GET(url, query = list(
+  latitude = 43.6,
+  longitude = 3.9,
+  daily = "temperature_2m_mean,relative_humidity_2m_mean,precipitation_sum",
+  start_date = "2024-01-01",
+  end_date = "2024-01-07"
+))
+
+status_code(res)
+data <- fromJSON(content(res, as = "text", encoding = "UTF-8"))
+```
+
+Test n°2: fonction historique : prend latitude, longitude et dates de debut et fin
+```{r}
+get_weather_history <- function(latitude, longitude, start_date, end_date,
+                                 daily = c("temperature_2m_mean", 
+                                           "relative_humidity_2m_mean", 
+                                           "precipitation_sum")) {
+  
+  url <- "https://archive-api.open-meteo.com/v1/archive"
+  
+  response <- GET(url, query = list(
+    latitude   = latitude,
+    longitude  = longitude,
+    daily      = paste(daily, collapse = ","),
+    start_date = as.character(start_date),
+    end_date   = as.character(end_date)
+  ))
+  
+  if (status_code(response) != 200) {
+    stop(paste("API error:", status_code(response)))
+  }
+  
+  data <- fromJSON(content(response, as = "text", encoding = "UTF-8"))
+  
+  df <- as.data.frame(data$daily)
+  df$latitude  <- latitude
+  df$longitude <- longitude
+  
+  return(df)
+}
+```
+Test fonction:
+```{r}
+test <- get_weather_history(
+  latitude   = 43.6,
+  longitude  = 3.9,
+  start_date = "2024-01-01",
+  end_date   = "2024-01-07"
+)
+
+head(test)
+```
+Test n°3 fonction forecast: prend latitude, longitude et dates de debut et fin
+```{r}
+get_weather <- function(latitude, longitude, n_days_forecast = NULL, 
+                         start_date = NULL, end_date = NULL,
+                         daily = c("temperature_2m_mean",
+                                   "relative_humidity_2m_mean",
+                                   "precipitation_sum")) {
+  
+  # 3 parameters only x days of prevision
+  if (!is.null(n_days_forecast) & is.null(start_date) & is.null(end_date)) {
+    start_date <- as.character(Sys.Date())
+    end_date   <- as.character(Sys.Date() + n_days_forecast)
+    url        <- "https://api.open-meteo.com/v1/forecast"
+    
+  # 4 parameters: start y end dates  
+  } else if (!is.null(start_date) & !is.null(end_date)) {
+    start_date <- as.character(start_date)
+    end_date   <- as.character(end_date)
+    url        <- "https://api.open-meteo.com/v1/forecast"
+    
+  } else {
+    stop("Provide either n_days_forecast OR both start_date and end_date")
+  }
+  
+  response <- GET(url, query = list(
+    latitude   = latitude,
+    longitude  = longitude,
+    daily      = paste(daily, collapse = ","),
+    start_date = start_date,
+    end_date   = end_date
+  ))
+  
+  if (status_code(response) != 200) {
+    stop(paste("API error:", status_code(response)))
+  }
+  
+  data <- fromJSON(content(response, as = "text", encoding = "UTF-8"))
+  
+  df <- as.data.frame(data$daily)
+  df$latitude  <- latitude
+  df$longitude <- longitude
+  
+  return(df)
+}
+```
+Test fonction:
+
+```{r}
+# 3 params  
+test1 <- get_weather(43.6, 3.9, n_days_forecast = 15)
+
+# 4 params 
+test2 <- get_weather(43.6, 3.9, 
+                     start_date = "2026-05-27",
+                      end_date   = "2026-05-29")
+
+```
+Test 4  historical and forecast with option of 3 or 4 parameters:
+
+```{r}
+
+
+#' Téléchargement des prévisions météo via l'API Open-Meteo
+#'
+#' @param latitude Latitude du point (numérique)
+#' @param longitude Longitude du point (numérique)
+#' @param n_days Nombre de jours de prévision à partir d'aujourd'hui (optionnel)
+#' @param start_date Date de début "YYYY-MM-DD" (optionnel)
+#' @param end_date Date de fin "YYYY-MM-DD" (optionnel)
+#' @param daily Vecteur de variables météo à télécharger
+#'
+#' @return Un data.frame avec les variables météo journalières
+#'
+#' @examples
+#' # Mode simple - 15 jours à partir d'aujourd'hui
+#' get_weather_forecast(43.6, 3.9, n_days = 15)
+#'
+#' # Mode complet - dates spécifiques
+#' get_weather_forecast(43.6, 3.9, start_date = "2026-05-01", end_date = "2026-05-15")
+
+get_weather_forecast <- function(latitude, longitude, n_days = NULL,
+                                  start_date = NULL, end_date = NULL,
+                                  daily = c("temperature_2m_mean",
+                                            "relative_humidity_2m_mean",
+                                            "precipitation_sum")) {
+
+  if (!is.null(n_days) & is.null(start_date) & is.null(end_date)) {
+    start_date <- as.character(Sys.Date())
+    end_date   <- as.character(Sys.Date() + n_days)
+
+  } else if (!is.null(start_date) & !is.null(end_date)) {
+    start_date <- as.character(start_date)
+    end_date   <- as.character(end_date)
+
+  } else {
+    stop("Fournir soit n_days, soit start_date ET end_date")
+  }
+
+  response <- GET("https://api.open-meteo.com/v1/forecast",
+    query = list(
+      latitude   = latitude,
+      longitude  = longitude,
+      daily      = paste(daily, collapse = ","),
+      start_date = start_date,
+      end_date   = end_date
+    ))
+
+  if (status_code(response) != 200) stop(paste("Erreur API:", status_code(response)))
+
+  df <- as.data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8"))$daily)
+  df$latitude  <- latitude
+  df$longitude <- longitude
+  return(df)
+}
+
+
+#' Téléchargement des données météo historiques via l'API Open-Meteo
+#'
+#' @param latitude Latitude du point (numérique)
+#' @param longitude Longitude du point (numérique)
+#' @param n_days Nombre de jours vers le passé à partir d'aujourd'hui (optionnel)
+#' @param start_date Date de début "YYYY-MM-DD" (optionnel)
+#' @param end_date Date de fin "YYYY-MM-DD" (optionnel)
+#' @param daily Vecteur de variables météo à télécharger
+#'
+#' @return Un data.frame avec les variables météo journalières
+#'
+#' @examples
+#' # Mode simple - 90 jours vers le passé
+#' get_weather_history(43.6, 3.9, n_days = 90)
+#'
+#' # Mode complet - dates spécifiques
+#' get_weather_history(43.6, 3.9, start_date = "2024-01-01", end_date = "2024-12-31")
+
+get_weather_history <- function(latitude, longitude, n_days = NULL,
+                                 start_date = NULL, end_date = NULL,
+                                 daily = c("temperature_2m_mean",
+                                           "relative_humidity_2m_mean",
+                                           "precipitation_sum")) {
+
+  if (!is.null(n_days) & is.null(start_date) & is.null(end_date)) {
+    start_date <- as.character(Sys.Date() - n_days)
+    end_date   <- as.character(Sys.Date() - 1)
+
+  } else if (!is.null(start_date) & !is.null(end_date)) {
+    start_date <- as.character(start_date)
+    end_date   <- as.character(end_date)
+
+  } else {
+    stop("Fournir soit n_days, soit start_date ET end_date")
+  }
+
+  response <- GET("https://archive-api.open-meteo.com/v1/archive",
+    query = list(
+      latitude   = latitude,
+      longitude  = longitude,
+      daily      = paste(daily, collapse = ","),
+      start_date = start_date,
+      end_date   = end_date
+    ))
+
+  if (status_code(response) != 200) stop(paste("Erreur API:", status_code(response)))
+
+  df <- as.data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8"))$daily)
+  df$latitude  <- latitude
+  df$longitude <- longitude
+  return(df)
+}
+
+```
+
+
+Test both fucntions
+```{r}
+# Forecast simple
+get_weather_forecast(43.6, 3.9, n_days = 15)
+
+# Forecast dates spécifiques
+get_weather_forecast(43.6, 3.9, start_date = "2026-05-18", end_date = "2026-05-26")
+
+# Historique simple
+get_weather_history(43.6, 3.9, n_days = 90)
+
+# Historique dates spécifiques
+get_weather_history(43.6, 3.9, start_date = "2024-01-01", end_date = "2024-12-31")
+```
+
