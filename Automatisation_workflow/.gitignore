@@ -1,7 +1,7 @@
-# Credentials — NE JAMAIS COMMITER
+# Credentials 
 config.R
 
-# Données générées (trop lourdes pour git)
+# Données générées 
 data/raw/
 models/
 
