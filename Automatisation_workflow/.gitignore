@@ -1,0 +1,16 @@
+# Credentials — NE JAMAIS COMMITER
+config.R
+
+# Données générées (trop lourdes pour git)
+data/raw/
+models/
+
+# Fichiers R temporaires
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj.user
+
+# OS
+.DS_Store
+Thumbs.db
