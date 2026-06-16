@@ -1,6 +1,13 @@
 # ============================================================
-# main.R — Point d'entrée du pipeline
-# Usage : Rscript main.R
+# main.R — Point d'entrée du pipeline hebdomadaire
+# Usage : Rscript main.R  ou  source("main.R")
+#
+# Ordre d'exécution complet (première fois) :
+#   1. source("scripts/00_train_models.R")   ← UNE SEULE FOIS
+#   2. source("main.R")                      ← initialisation + hebdomadaire
+#
+# Ensuite (chaque semaine) :
+#   source("main.R")                         ← hebdomadaire uniquement
 # ============================================================
 
 library(here)
