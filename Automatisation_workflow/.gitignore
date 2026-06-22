@@ -1,5 +1,7 @@
 # Credentials 
 config.R
+config_vide.R
+config_charge.R
 
 # Données générées 
 data/raw/
