@@ -336,19 +336,20 @@ rasterize_to_communes <- function(df, var_col, roi,
   res_x <- if (length(xs) > 1) min(diff(xs)) else 0.05
   res_y <- if (length(ys) > 1) min(diff(ys)) else 0.05
 
-  r_template <- terra::rast(
+  # fix warning : "Cannot find proj.db" / "Cannot set SRS to vector: empty srs" — PROJ système absent, opérations WGS84 non affectées
+  r_template <- suppressWarnings(terra::rast(
     terra::ext(min(xs) - res_x / 2, max(xs) + res_x / 2,
                min(ys) - res_y / 2, max(ys) + res_y / 2),
     resolution = c(res_x, res_y),
     crs = "+proj=longlat +datum=WGS84"
-  )
+  ))
 
-  v     <- terra::vect(df_sub, geom = c(x_col, y_col), crs = "EPSG:4326")
+  v     <- suppressWarnings(terra::vect(df_sub, geom = c(x_col, y_col), crs = "EPSG:4326"))
   dates <- unique(df_sub[[date_col]])
 
   rasters <- lapply(dates, function(d) {
     v_d <- v[v[[date_col]] == d, ]
-    r   <- terra::rasterize(v_d, r_template, field = var_col, fun = "mean")
+    r   <- suppressWarnings(terra::rasterize(v_d, r_template, field = var_col, fun = "mean"))
     names(r) <- d
     r
   })
@@ -476,6 +477,81 @@ rasterize_to_communes <- function(df, var_col, roi,
 # ==============
 
 
+# new (suppression coords_grid.csv — grid recréé en mémoire) ====
+#' Crée le grid de points météo à l'intérieur du ROI
+#'
+#' @description
+#' Remplace la lecture de data/coords_grid.csv. Génère un quadrillage régulier
+#' de points (centroïdes de carrés de grid_res degrés) et ne garde que ceux
+#' qui tombent à l'intérieur de geopolygon.
+#'
+#' @param geopolygon  Polygone sf représentant le ROI (union des communes)  [ENTRÉE]
+#' @param roi_bbox    Bbox sf optionnel depuis config.R (NULL = bbox du ROI) [ENTRÉE]
+#' @param grid_res    Résolution du grid en degrés (défaut 0.05)            [ENTRÉE]
+#' @return data.frame avec colonnes X (longitude), Y (latitude), site (id)  [SORTIE]
+make_grid <- function(geopolygon, roi_bbox = NULL, grid_res = 0.05) {
+
+  bbox <- if (!is.null(roi_bbox)) {
+    sf::st_bbox(roi_bbox, crs = 4326)
+  } else {
+    sf::st_bbox(geopolygon)
+  }
+
+  grid      <- sf::st_make_grid(sf::st_as_sfc(bbox), cellsize = grid_res,
+                                square = TRUE, what = "polygons")
+  grid_sf   <- sf::st_sf(geometry = grid)
+  centroids <- sf::st_centroid(grid_sf)
+
+  # Garder uniquement les centroïdes qui tombent dans geopolygon
+  # fix warning : "Spherical geometry switched off/on" et "assumes planar" — messages cosmétiques supprimés
+  suppressMessages({
+    sf::sf_use_s2(FALSE)
+    centroids <- sf::st_intersection(centroids, geopolygon) %>%
+      dplyr::select(geometry)
+    sf::sf_use_s2(TRUE)
+  })
+
+  coords      <- sf::st_coordinates(centroids)
+  coords      <- round(as.data.frame(coords), 3)
+  coords$site <- seq_len(nrow(coords))
+  coords
+}
+# ==============
+
+
+# new (point 3 — agrégation météo par commune avant stockage BD) ====
+#' Agrège des données météo brutes (par point de grille) à l'échelle de la commune
+#'
+#' @description
+#' Convertit les données brutes Open-Meteo (site/X/Y) en données agrégées par
+#' commune via rasterize_to_communes(). Appelée dans 01_initialisation.R et
+#' 02_hebdomadaire.R avant toute écriture en BD — permet de stocker directement
+#' (codgeo, date, TM, RR, UM) au lieu des données brutes par point de grille.
+#'
+#' @param raw_df   data.frame avec colonnes X, Y, date, TM, RR, UM             [ENTRÉE]
+#' @param roi      Objet sf — communes du ROI                                    [ENTRÉE]
+#' @param grid_res Résolution du grid en degrés (défaut 0.05)                   [ENTRÉE]
+#' @return data.frame (codgeo, date, TM, RR, UM) — une ligne par commune x date [SORTIE]
+aggregate_meteo_to_communes <- function(raw_df, roi, grid_res = 0.05) {
+  raw_df <- raw_df %>%
+    dplyr::mutate(
+      date   = as.character(as.Date(date)),
+      X_snap = round(X / grid_res) * grid_res,
+      Y_snap = round(Y / grid_res) * grid_res
+    )
+
+  tm <- rasterize_to_communes(raw_df, "TM", roi) %>% dplyr::select(codgeo, date, TM)
+  rr <- rasterize_to_communes(raw_df, "RR", roi) %>% dplyr::select(codgeo, date, RR)
+  um <- rasterize_to_communes(raw_df, "UM", roi) %>% dplyr::select(codgeo, date, UM)
+
+  tm %>%
+    dplyr::left_join(rr, by = c("codgeo", "date")) %>%
+    dplyr::left_join(um, by = c("codgeo", "date")) %>%
+    dplyr::mutate(date = as.Date(date))
+}
+# ==============
+
+
 # #new (9 - colonne is_forecast, fraîcheur historique) ====
 #' Garantit que la table météo possède la colonne is_forecast (BOOLEAN).
 #'
@@ -498,10 +574,14 @@ rasterize_to_communes <- function(df, var_col, roi,
 #' @return invisible(NULL) — effet de bord : ALTER TABLE si la table existe  [SORTIE]
 ensure_is_forecast_column <- function(con, table_name) {
   if (DBI::dbExistsTable(con, table_name)) {
-    DBI::dbExecute(con, sprintf(
-      "ALTER TABLE %s ADD COLUMN IF NOT EXISTS is_forecast BOOLEAN DEFAULT FALSE",
-      table_name
-    ))
+    # fix warning : "NOTICE: column already exists, skipping" — on vérifie en R avant ALTER pour éviter le NOTICE PostgreSQL
+    col_exists <- "is_forecast" %in% DBI::dbListFields(con, table_name)
+    if (!col_exists) {
+      DBI::dbExecute(con, sprintf(
+        "ALTER TABLE %s ADD COLUMN is_forecast BOOLEAN DEFAULT FALSE",
+        table_name
+      ))
+    }
   }
   invisible(NULL)
 }

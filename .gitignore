@@ -1,4 +1,17 @@
-.Rproj.user
+# Credentials — NE JAMAIS COMMITER
+config.R
+
+# Données générées (trop lourdes pour git)
+data/raw/
+data/meteo_history_backup.csv
+models/
+
+# Fichiers R temporaires
 .Rhistory
 .RData
-.Ruserdata
+.Rproj.user/
+*.Rproj.user
+
+# OS
+.DS_Store
+Thumbs.db
