@@ -58,12 +58,31 @@ library(logr)
 source(here("scripts", "00_functions.R"))
 source(here("config.R"))
 
+# fix (bug variables globales collées entre sessions) : ce script fixe lui-même
+# init_lookback / skip_shap / force_recompute / init_forecast_done pour ses
+# deux runs (voir section 5 plus bas) — mais si un script de backfill par
+# tranches (06_backfill_shap_por_tramos.R) a été interrompu AVANT son propre
+# rm() final, des variables comme backfill_start_date / backfill_end_date
+# restent dans la session R. 02_hebdomadaire.R les détecte et leur donne la
+# PRIORITÉ sur init_lookback (voir .backfill_plage_fixe dans ce script) —
+# sans savoir que ce n'est pas ce script-ci qui les a définies. Résultat vécu
+# en pratique : initialisation.R a silencieusement traité une fenêtre de 2 ans
+# laissée par une tentative de backfill précédente, au lieu de sa propre
+# fenêtre (10 ans sans SHAP + 14 jours avec SHAP). On nettoie donc ici, avant
+# de commencer, toute variable "optionnelle" que ce script ne contrôle pas
+# lui-même — pour un comportement prévisible à chaque exécution, peu importe
+# ce qu'une session R précédente a laissé traîner.
+.vars_a_nettoyer <- c("backfill_start_date", "backfill_end_date",
+                       "init_lookback", "skip_shap",
+                       "force_recompute", "init_forecast_done",
+                       "shap_max_background", "shap_batch_size")
+rm(list = intersect(.vars_a_nettoyer, ls(envir = .GlobalEnv)), envir = .GlobalEnv)
+rm(.vars_a_nettoyer)
+
 # ============================================================
-# Paramètres locaux
+# Paramètres locaux (lus depuis config.R)
 # ============================================================
-path_models  <- here("models")
-path_backup  <- here("data", "meteo_history_backup.csv")
-grid_res     <- 0.05
+# grid_res, path_models, path_backup, n_days_forecast définis dans config.R
 
 dir.create(here("data"), recursive = TRUE, showWarnings = FALSE)
 dir.create(path_models, showWarnings = FALSE)
@@ -91,6 +110,8 @@ con <- dbConnect(
   user     = db_user,
   password = db_password
 )
+# Désactiver le timeout serveur pour les COPY longues (chargement historique 10 ans)
+dbExecute(con, "SET statement_timeout = 0")
 
 # new (colonne is_forecast — fraîcheur du remplacement historique) ====
 ensure_is_forecast_column(con, db_table_meteo)
@@ -109,12 +130,13 @@ roi <- st_transform(roi, 4326)
 # ==============
 
 # #new (8 - Renommage ROI) ====
-# fix warning : "Spherical geometry switched off/on" et "assumes planar" — messages cosmétiques supprimés
-suppressMessages({
-  sf::sf_use_s2(FALSE)
-  geopolygon <- st_union(st_make_valid(roi))
-  sf::sf_use_s2(TRUE)
-})
+# sf_use_s2(FALSE) requis : st_union/st_intersection échouent sur certaines géométries ROI
+# avec s2 activé (erreur "format non supporté"). Les messages "Spherical geometry switched
+# off/on" et "assumes planar" sont normaux et attendus ici.
+sf::sf_use_s2(FALSE)
+geopolygon <- st_union(st_make_valid(roi))
+sf::sf_use_s2(TRUE)
+log_print("sf_use_s2 désactivé temporairement pour st_union/st_make_valid (comportement attendu)")
 # ==============
 
 # roi_info : data.frame codgeo/libgeo sans géométrie, pour les jointures
@@ -173,15 +195,17 @@ if (dbExistsTable(con, db_table_meteo) &&
     "SELECT codgeo::text, COUNT(DISTINCT date) AS n_dates FROM %s WHERE NOT is_forecast GROUP BY codgeo",
     db_table_meteo
   ))
-  codgeo_ok        <- codgeo_check$codgeo[codgeo_check$n_dates >= expected_dates]
-  codgeo_incomplets <- setdiff(all_codgeo, codgeo_ok)
+  codgeo_ok         <- codgeo_check$codgeo[codgeo_check$n_dates >= expected_dates]
+  # Communes incomplètes = présentes en BD mais avec trop peu de dates
+  # (on exclut les communes absentes de la BD car elles n'ont pas de point de grille)
+  codgeo_incomplets <- codgeo_check$codgeo[codgeo_check$n_dates < expected_dates]
 
   cat("BD actuelle :", length(codgeo_check$codgeo), "communes\n")
   cat("  → Complètes (≥", round(expected_dates), "dates) :", length(codgeo_ok), "\n")
-  cat("  → Incomplètes/absentes :", length(codgeo_incomplets), "\n")
+  cat("  → Incomplètes (présentes mais données insuffisantes) :", length(codgeo_incomplets), "\n")
   # new: logs =======
   log_print(paste("BD existante — communes complètes :", length(codgeo_ok),
-                  "| incomplètes/absentes :", length(codgeo_incomplets)))
+                  "| incomplètes :", length(codgeo_incomplets)))
   # ==============
 
   if (length(codgeo_incomplets) > 0) {
@@ -292,6 +316,41 @@ if (phase_needed) {
   }
 }
 
+# ---- Vérification de la continuité de l'historique ----
+cat("Vérification des lacunes dans l'historique météo...\n")
+dates_bd <- as.Date(dbGetQuery(con, sprintf(
+  "SELECT DISTINCT date FROM %s WHERE is_forecast = FALSE ORDER BY date",
+  db_table_meteo
+))$date)
+
+if (length(dates_bd) > 1) {
+  dates_attendues  <- seq(min(dates_bd), max(dates_bd), by = "day")
+  dates_manquantes <- dates_attendues[!dates_attendues %in% dates_bd]
+
+  if (length(dates_manquantes) == 0) {
+    cat("✓ Historique continu — aucune lacune détectée\n")
+    log_print("✓ Historique continu — aucune lacune")
+  } else {
+    # Regrouper en périodes consécutives
+    groupes <- split(dates_manquantes, cumsum(c(1, diff(dates_manquantes) > 1)))
+    cat("⚠ LACUNES DÉTECTÉES dans l'historique météo :\n")
+    for (g in groupes) {
+      if (length(g) == 1) {
+        cat("  -", format(g), "\n")
+      } else {
+        cat("  -", format(min(g)), "→", format(max(g)),
+            "(", length(g), "jours)\n")
+      }
+    }
+    cat("  Total :", length(dates_manquantes), "jours manquants\n")
+    log_print(paste("⚠ Lacunes historique :", length(dates_manquantes),
+                    "jours manquants — relancer l'initialisation ou compléter via l'API"))
+  }
+} else {
+  cat("⚠ Historique vide ou insuffisant\n")
+}
+# ==============
+
 # ============================================================
 # 3. Téléchargement du forecast initial
 # ============================================================
@@ -391,6 +450,11 @@ cat("✓ Modèles entraînés détectés :", length(rds_files), "fichiers RDS\n"
 log_print(paste("✓ Modèles détectés :", paste(rds_files, collapse = ", ")))
 # ==============
 
+# Récupérer la date min de meteo_ruiz avant de fermer la connexion
+# (nécessaire pour calculer init_lookback dans la section 5 ci-dessous)
+meteo_min_date <- as.Date(dbGetQuery(con, sprintf(
+  "SELECT MIN(date) FROM %s", db_table_meteo))[[1]])
+
 dbDisconnect(con)
 cat("\n✓ Météo initialisée. Lancement du pipeline de prédictions...\n")
 # new: logs =======
@@ -399,12 +463,28 @@ log_close()
 # ==============
 
 # ============================================================
-# 5. Génération des prédictions initiales (mosquito)
+# 5. Génération des prédictions initiales
 # ============================================================
-# Lancer hebdomadaire pour peupler les tables albopictus dès l'initialisation.
-# skip_recompute sera FALSE car db_layer n'existe pas encore.
-# init_forecast_done indique à hebdo de ne pas re-télécharger le forecast.
+# Deux runs de 02_hebdomadaire.R :
+#
+# Run 1 — historique complet, SHAP désactivé :
+#   init_lookback = nbre de jours depuis le début de meteo_ruiz → tous les lundis
+#   skip_shap = TRUE → SHAP = NA (trop lent sur des années de données)
+#   force_recompute = TRUE → ne pas sauter même si meteo_changed = FALSE
+#
+# Run 2 — semaines récentes avec SHAP :
+#   fenêtre normale (n_days_forecast jours en arrière)
+#   SHAP calculé normalement → écrase les semaines récentes avec valeurs SHAP
+cat("--- Run 1/2 : prédictions historiques (SHAP = NA) ---\n")
+init_lookback  <- as.integer(Sys.Date() - meteo_min_date) + 1
+skip_shap      <- TRUE
+force_recompute <- TRUE
 init_forecast_done <- TRUE
-cat("--- Lancement de 02_hebdomadaire.R pour les prédictions initiales ---\n")
 source(here("scripts", "02_hebdomadaire.R"))
-rm(init_forecast_done)  # Nettoyage — ne doit pas persister dans l'environnement
+rm(init_lookback, skip_shap, force_recompute, init_forecast_done)
+
+cat("--- Run 2/2 : prédictions récentes avec SHAP ---\n")
+force_recompute    <- TRUE
+init_forecast_done <- TRUE
+source(here("scripts", "02_hebdomadaire.R"))
+rm(force_recompute, init_forecast_done)

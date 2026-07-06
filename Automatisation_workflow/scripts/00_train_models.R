@@ -4,7 +4,7 @@
 # - Abundance model: quantile RF regression
 # - Combined prediction: expected abundance + uncertainty interval
 ###########################
-# Code original de Paul (workflow_ruiz.R) — quasiment inchangé. Les seuls
+# Code original (workflow_ruiz.R) — quasiment inchangé. Les seuls
 # écarts par rapport à l'original sont marqués par un commentaire
 # "# change : ..." à l'endroit exact où ils se produisent (chemins de
 # fichiers adaptés à l'arborescence du pipeline, fonction
@@ -23,7 +23,20 @@ library(correlation)
 # au lieu d'être redéfinie ici, pour ne pas dupliquer le même code dans
 # 00_train_models.R ET 02_hebdomadaire.R).
 library(here)
+# new: logs =======
+library(logr)
+# ==============
 source(here("scripts", "00_functions.R"))
+
+# new: logs =======
+dir.create(here("logs"), showWarnings = FALSE, recursive = TRUE)
+lf <- log_open(
+  here("logs", paste0("train_models_", Sys.Date(), ".log")),
+  autolog    = TRUE,
+  show_notes = FALSE
+)
+log_print(paste("=== Run entraînement modèles —", Sys.time(), "==="))
+# ==============
 
 set.seed(123)
 
@@ -341,7 +354,13 @@ abundance_perf_by_site <- df_cv_abundance_quantiles %>%
     n = n()
   )
 
-
+# change : dans le code original, ce résumé n'était ni assigné ni affiché
+# explicitement (juste une expression flottante en fin de section) — si ce
+# script est exécuté via source() (ce qui est le cas dans ce pipeline,
+# main.R/00_train_models.R), R n'affiche PAS automatiquement ce genre
+# d'expression non assignée, donc le résultat serait silencieusement perdu.
+# Je l'assigne à une variable et l'affiche explicitement avec print() pour
+# qu'il soit visible, comme les 3 autres résumés ci-dessus.
 expected_abundance_perf_by_site <- df_cv_combined %>%
   filter(!is.na(pred_expected_abundance)) %>%
   group_by(site) %>%
@@ -356,6 +375,14 @@ cat("\n--- Performance abondance (global) ---\n"); print(abundance_perf)
 cat("\n--- Performance abondance par site ---\n"); print(abundance_perf_by_site)
 cat("\n--- Performance abondance attendue (présence x abondance) par site ---\n")
 print(expected_abundance_perf_by_site)
+# new: logs =======
+log_print(paste("AUC présence — médiane par site :", round(median(auc_by_site$auc, na.rm = TRUE), 3),
+                "| min :", round(min(auc_by_site$auc, na.rm = TRUE), 3),
+                "| max :", round(max(auc_by_site$auc, na.rm = TRUE), 3)))
+log_print(paste("Performance abondance (global) — Spearman :", round(abundance_perf$spearman, 3),
+                "| MAE :", round(abundance_perf$mae, 3),
+                "| Couverture 90% :", round(abundance_perf$coverage90, 3)))
+# ==============
 
 ###########################
 # 10. SAVE OUTPUTS
@@ -403,9 +430,17 @@ saveRDS(
 X_presence  <- as.data.frame(df_model_presence[, predictors_presence])
 X_abundance <- as.data.frame(df_model_abundance[, predictors_abundance])
 
+# X_combined : les 5 prédicteurs du modèle combiné sur TOUTES les observations
+# d'entraînement (présence+abondance). Utilisé comme background de référence
+# dans le SHAP "absolu" de 02_hebdomadaire.R — mesure l'écart par rapport à la
+# distribution historique entraînée, indépendamment des communes de la semaine courante.
+all_pred_combined <- unique(c(predictors_presence, predictors_abundance))
+X_combined  <- as.data.frame(na.omit(df_model[, all_pred_combined]))
+
 saveRDS(
   list(X_presence  = X_presence,
        X_abundance = X_abundance,
+       X_combined  = X_combined,
        df_model    = df_model),
   file.path(path_models, "res_training_data.rds")
 )
@@ -435,3 +470,8 @@ p_abundance <- ggplot(df_cv_combined, aes(x = date)) +
 #ggsave(file.path(path_models, "plot_abundance_LOSO_quantile_rf.png"), p_abundance, width = 10, height = 6)  # change : chemin dans path_models, le reste (ggsave commenté) est identique à l'original
 
 cat("\n✓ Entraînement terminé. Fichiers sauvegardés dans", path_models, "\n")
+# new: logs =======
+log_print(paste("✓ Modèles sauvegardés dans", path_models))
+log_print(paste("=== Fin du run entraînement —", Sys.time(), "==="))
+log_close()
+# ==============

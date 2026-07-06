@@ -16,8 +16,8 @@
 # PARAMÈTRES CRÉÉS PAR CE CODE :
 #   Les fonctions elles-mêmes : get_weather_history(), get_weather_forecast(),
 #   get_weather_history_batch(), get_weather_forecast_batch(),
-#   .parse_openmeteo_batch() (interne), rasterize_to_communes(), compute_shap(),
-#   predict_two_part_uncertainty().
+#   get_weather_seasonal_forecast_batch(), .parse_openmeteo_batch() (interne),
+#   rasterize_to_communes(), compute_shap(), predict_two_part_uncertainty().
 #
 # PARAMÈTRES PRIS D'AUTRES SCRIPTS :
 #   Aucun à la lecture du fichier — mais au moment de l'EXÉCUTION, les fonctions
@@ -281,6 +281,149 @@ get_weather_forecast_batch <- function(latitudes, longitudes, n_days = 14,
   .parse_openmeteo_batch(response, latitudes, longitudes)
 }
 
+# #new (prévision saisonnière Open-Meteo) ====
+#' Téléchargement batch prévision saisonnière — jusqu'à 9 mois, plusieurs points
+#'
+#' @description
+#' Utilise l'API seasonal d'Open-Meteo (https://seasonal-api.open-meteo.com/v1/seasonal)
+#' pour télécharger des prévisions d'ensemble jusqu'à ~9 mois à l'avance.
+#' Retourne la moyenne des membres d'ensemble pour TM, RR, UM — même format que
+#' get_weather_forecast_batch(), compatible avec le pipeline.
+#'
+#' PARTICULARITÉS DE L'API SEASONAL (différences avec l'API forecast standard) :
+#'   - "temperature_2m_mean" N'EXISTE PAS → l'API ne fournit que max et min
+#'     par membre. Cette fonction calcule la moyenne (max+min)/2 en R.
+#'   - Les variables ont un suffixe "_memberXX" (ex. precipitation_sum_member01).
+#'   - Le nombre de membres dépend du modèle :
+#'       cfs_v2       → 4  membres (member01..member04) | jusqu'à 9 mois
+#'       ecmwf_ifs04  → 51 membres (member01..member51) | jusqu'à 7 mois
+#'       bom_access_s2 → 11 membres                     | jusqu'à 6 mois
+#'
+#' @param latitudes  Vecteur de latitudes                                         [ENTRÉE]
+#' @param longitudes Vecteur de longitudes (même longueur que latitudes)          [ENTRÉE]
+#' @param n_months   Nombre de mois de prévision (1–9, défaut 6)                 [ENTRÉE]
+#' @param model      Modèle saisonnier. Défaut "cfs_v2" (4 membres, 9 mois).    [ENTRÉE]
+#'                   Alternatives : "ecmwf_ifs04" (51 membres), "bom_access_s2" (11).
+#' @return data.frame avec colonnes time, temperature_2m_mean, precipitation_sum,
+#'         relative_humidity_2m_mean, latitude, longitude — même format que
+#'         get_weather_forecast_batch()                                           [SORTIE]
+#'
+#' @examples
+#' df_saison <- get_weather_seasonal_forecast_batch(
+#'   latitudes  = c(43.6, 43.7),
+#'   longitudes = c(3.9, 3.8),
+#'   n_months   = 6
+#' )
+get_weather_seasonal_forecast_batch <- function(latitudes, longitudes, n_months = 6,
+                                                 model = NULL,
+                                                 n_members = 4) {
+
+  if (n_months < 1 || n_months > 9)
+    stop("n_months doit être compris entre 1 et 9 (limite de l'API saisonnière)")
+
+  start_date <- as.character(Sys.Date())
+  end_date   <- as.character(Sys.Date() + n_months * 31)
+
+  # Nombre de membres par défaut = 4 (correspond à CFS v2, le modèle par défaut de l'API).
+  # Passer n_members = 51 si on utilise un modèle ECMWF (51 membres).
+  members_sfx <- sprintf("%02d", seq_len(n_members))
+
+  # COMPORTEMENT DE L'API SEASONAL :
+  #   On demande les variables de BASE sans suffixe membre.
+  #   Ex : "temperature_2m_max" → l'API retourne la moyenne d'ensemble dans
+  #   la colonne "temperature_2m_max" PLUS les membres individuels "_memberXX".
+  #   On utilise les colonnes de base (déjà agrégées) — pas besoin de moyenner.
+  #   temperature_2m_mean N'EXISTE PAS → on calcule (Tmax + Tmin) / 2.
+  #   relative_humidity_2m_mean peut être absent selon le modèle → fallback.
+  vars_api_base <- c("temperature_2m_max", "temperature_2m_min",
+                     "precipitation_sum", "relative_humidity_2m_mean")
+
+  .make_query <- function(vars) {
+    q <- list(
+      latitude   = paste(round(latitudes,  6), collapse = ","),
+      longitude  = paste(round(longitudes, 6), collapse = ","),
+      daily      = paste(vars, collapse = ","),
+      start_date = start_date,
+      end_date   = end_date
+    )
+    if (!is.null(model)) q$models <- model
+    q
+  }
+
+  # Tentative avec toutes les variables, puis fallback sans humidité si 400
+  vars_to_use <- vars_api_base
+  max_retries <- 7
+  response    <- NULL
+
+  for (attempt in seq_len(max_retries)) {
+    wait_sec <- min(10 * 2^(attempt - 1), 300)
+    response <- tryCatch(
+      GET("https://seasonal-api.open-meteo.com/v1/seasonal",
+          query   = .make_query(vars_to_use),
+          httr::timeout(120)),
+      error = function(e) {
+        cat("  [seasonal batch] Erreur réseau tentative", attempt, "/", max_retries,
+            ":", conditionMessage(e), "— attente", wait_sec, "s\n")
+        NULL
+      }
+    )
+    if (!is.null(response) && status_code(response) == 200) break
+
+    # Fallback : supprimer l'humidité si absent du modèle (erreur 400)
+    if (!is.null(response) && status_code(response) == 400 &&
+        "relative_humidity_2m_mean" %in% vars_to_use) {
+      cat("  [seasonal batch] relative_humidity_2m_mean indisponible — retry sans UM\n")
+      vars_to_use <- setdiff(vars_to_use, "relative_humidity_2m_mean")
+      next
+    }
+    if (!is.null(response))
+      cat("  [seasonal batch] Status", status_code(response), "tentative", attempt,
+          "/", max_retries, "— attente", wait_sec, "s\n")
+    if (attempt < max_retries) Sys.sleep(wait_sec)
+  }
+  if (is.null(response) || status_code(response) != 200)
+    stop(paste("Erreur API saisonnière après", max_retries, "tentatives"))
+
+  # Parseur — utilise les colonnes de base (moyenne d'ensemble déjà calculée par l'API)
+  raw <- fromJSON(content(response, as = "text", encoding = "UTF-8"),
+                  simplifyDataFrame = FALSE)
+  if (!is.null(raw$daily)) raw <- list(raw)  # 1 seul point → liste simple
+
+  results <- lapply(seq_along(raw), function(i) {
+    daily_list <- raw[[i]]$daily
+    if (is.null(daily_list)) return(NULL)
+    df <- as.data.frame(daily_list, stringsAsFactors = FALSE)
+
+    # Supprimer les colonnes _memberXX (on utilise uniquement la moyenne d'ensemble)
+    cols_membres <- grep("_member[0-9]", colnames(df), value = TRUE)
+    df <- df[, !colnames(df) %in% cols_membres, drop = FALSE]
+
+    # TM = (Tmax + Tmin) / 2 depuis les colonnes de base (moyennes d'ensemble)
+    if (all(c("temperature_2m_max", "temperature_2m_min") %in% colnames(df))) {
+      df$temperature_2m_mean <- (as.numeric(df$temperature_2m_max) +
+                                 as.numeric(df$temperature_2m_min)) / 2
+      df$temperature_2m_max  <- NULL
+      df$temperature_2m_min  <- NULL
+    }
+
+    # RR : déjà dans precipitation_sum (colonne de base)
+    if ("precipitation_sum" %in% colnames(df))
+      df$precipitation_sum <- as.numeric(df$precipitation_sum)
+
+    # UM : déjà dans relative_humidity_2m_mean si disponible
+    if ("relative_humidity_2m_mean" %in% colnames(df))
+      df$relative_humidity_2m_mean <- as.numeric(df$relative_humidity_2m_mean)
+
+    df$latitude  <- latitudes[i]
+    df$longitude <- longitudes[i]
+    df
+  })
+
+  dplyr::bind_rows(Filter(Negate(is.null), results))
+}
+# ==============
+
+
 # Parseur interne — gère réponse unique ou tableau (batch)
 .parse_openmeteo_batch <- function(response, latitudes, longitudes) {
   raw    <- fromJSON(content(response, as = "text", encoding = "UTF-8"),
@@ -355,7 +498,15 @@ rasterize_to_communes <- function(df, var_col, roi,
   })
   r_stack <- terra::rast(rasters)
 
-  result <- exactextractr::exact_extract(r_stack, roi, c("mean")) %>%
+  result_ex <- exactextractr::exact_extract(r_stack, roi, c("mean"))
+  # fix : exact_extract retourne un vecteur (ou data.frame à 1 col sans suffixe de date)
+  # pour les rasters mono-date — on normalise en data.frame avec le bon nom de colonne
+  if (length(dates) == 1) {
+    if (!is.data.frame(result_ex)) result_ex <- data.frame(V1 = result_ex)
+    names(result_ex) <- paste0("mean.", gsub("-", ".", as.character(dates[1])))
+  }
+
+  result <- result_ex %>%
     dplyr::bind_cols(sf::st_drop_geometry(roi)) %>%
     tidyr::pivot_longer(
       cols      = dplyr::starts_with("mean"),
@@ -403,8 +554,50 @@ rasterize_to_communes <- function(df, var_col, roi,
 #'                       défaut 100)                                    [ENTRÉE]
 #' @return data.frame p colonnes (une par variable de feature_names),
 #'         une ligne par observation de X_df — valeurs de Shapley exactes [SORTIE]
+# new (indicateur de progression pour les calculs longs) ====
+#' Formate une durée en secondes en texte lisible (ex. "1 h 12 min", "45 s")
+#'
+#' @description
+#' QUOI = petite fonction utilitaire, purement cosmétique, utilisée par
+#' .shapley_exact() et predict_two_part_uncertainty() pour afficher le temps
+#' écoulé / temps restant estimé (ETA) pendant les calculs longs (backfill
+#' historique de plusieurs heures) — sans ça, impossible de savoir si un run
+#' de plusieurs heures avance normalement ou est bloqué.
+#'
+#' @param secondes Durée en secondes (numérique, peut être NA/Inf)  [ENTRÉE]
+#' @return Texte formaté (heures/minutes/secondes selon la grandeur) [SORTIE]
+.format_duree <- function(secondes) {
+  if (!is.finite(secondes) || secondes < 0) return("? ")
+  if (secondes < 60) return(sprintf("%.0f s", secondes))
+  if (secondes < 3600) return(sprintf("%.0f min %.0f s", secondes %/% 60, secondes %% 60))
+  sprintf("%.0f h %.0f min", secondes %/% 3600, (secondes %% 3600) %/% 60)
+}
+
+#' Affiche un message de progression — log_print() si disponible, sinon cat()
+#'
+#' @description
+#' QUOI = évite de dupliquer le if(exists("log_print")) partout. Utilise
+#' log_print() (package logr, ouvert dans 02_hebdomadaire.R) quand disponible,
+#' pour que la progression reste dans logs/log/ — sinon retombe sur cat().
+#'
+#' @param msg Message texte à afficher                              [ENTRÉE]
+.log_progression <- function(msg) {
+  # fix ("Log is not open.") : logr::log_print() plante si le package logr est
+  # chargé (ex. resté attaché d'un script précédent dans la même session R,
+  # comme 02_hebdomadaire.R) mais qu'aucun log_open() n'a été appelé dans CETTE
+  # session (ex. 07_seasonal_forecast_predictions.R, qui n'utilise pas logr).
+  # tryCatch() permet de retomber proprement sur cat() dans ce cas, au lieu de
+  # spammer la console avec "Log is not open." à chaque appel.
+  ok <- FALSE
+  if (exists("log_print", mode = "function")) {
+    ok <- isTRUE(tryCatch({ log_print(msg); TRUE }, error = function(e) FALSE))
+  }
+  if (!ok) cat(msg, "\n")
+}
+# ==============
+
 .shapley_exact <- function(model, X_df, background, feature_names, pred_wrapper,
-                            max_background = 100) {
+                            max_background = 100, batch_size = 2000) {
 
   p <- length(feature_names)
   n <- nrow(X_df)
@@ -425,29 +618,71 @@ rasterize_to_communes <- function(df, var_col, roi,
   })
 
   # v_S : QUOI = cache des valeurs v(S) pour chaque coalition S, calculées une
-  #   seule fois pour TOUTES les observations en même temps (vectorisé) plutôt
-  #   que ligne par ligne, pour la performance.
+  #   seule fois pour TOUTES les observations (vectorisé PAR LOT) plutôt que
+  #   ligne par ligne, pour la performance.
   v_S <- vector("list", length(all_subsets))
+  n_subsets <- length(all_subsets)
+
+  # new (indicateur de progression) : chaque itération traite un data.frame de
+  # n * n_bg lignes — pour un backfill historique (n = milliers de lignes),
+  # une seule itération peut prendre plusieurs minutes. On affiche l'avancement
+  # (coalition i/n_subsets) + temps écoulé + ETA (estimé à partir du temps moyen
+  # des itérations déjà faites) pour pouvoir suivre un run long sans deviner.
+  t_debut_shap <- Sys.time()
+
+  # fix (bug "vector memory limit of 16.0 Gb reached") : sur un backfill de
+  # plusieurs milliers de lignes (n grand), l'ancienne version construisait
+  # bg_rep = TOUT n * n_bg d'un coup (ex. 33 600 lignes à expliquer x 50
+  # background = 1,68 million de lignes) et passait ça en un seul appel à
+  # pred_wrapper() — pour le modèle d'abondance (ranger quantile regression),
+  # cet unique appel sur >1M lignes dépasse la limite mémoire par vecteur de R
+  # sur Mac (16 Go), et FAIT PLANTER TOUT LE CALCUL SHAP (capturé par le
+  # tryCatch dans 02_hebdomadaire.R → colonnes NA pour TOUTE la tranche, sans
+  # que la taille du problème soit visible avant le crash). On découpe donc
+  # les n observations à expliquer en lots de `batch_size` : chaque appel à
+  # pred_wrapper() ne traite jamais plus de batch_size * n_bg lignes à la
+  # fois, quel que soit n — résultat mathématiquement identique (mêmes
+  # moyennes par observation), juste calculé en morceaux bornés en mémoire.
+  batch_starts <- seq(1, n, by = batch_size)
 
   for (i in seq_along(all_subsets)) {
     S <- all_subsets[[i]]
+    v_i <- numeric(n)
 
-    # Construit un grand data.frame de n_bg * n lignes : pour chaque observation
-    # de X_df, on répète le background n_bg fois et on remplace les colonnes
-    # de S par la vraie valeur de l'observation (les autres colonnes restent
-    # celles du background = "valeur absente/marginalisée").
-    bg_rep <- background[rep(seq_len(n_bg), times = n), , drop = FALSE]
+    for (b_start in batch_starts) {
+      b_end   <- min(b_start + batch_size - 1, n)
+      idx_obs <- b_start:b_end
+      n_batch <- length(idx_obs)
 
-    if (length(S) > 0) {
-      obs_rep <- X_df[rep(seq_len(n), each = n_bg), feature_names[S], drop = FALSE]
-      bg_rep[, feature_names[S]] <- obs_rep
+      # Construit un data.frame de n_bg * n_batch lignes (borné, jamais tout
+      # n d'un coup) : pour chaque observation du lot, on répète le
+      # background n_bg fois et on remplace les colonnes de S par la vraie
+      # valeur de l'observation (les autres colonnes restent celles du
+      # background = "valeur absente/marginalisée").
+      bg_rep <- background[rep(seq_len(n_bg), times = n_batch), , drop = FALSE]
+
+      if (length(S) > 0) {
+        obs_rep <- X_df[rep(idx_obs, each = n_bg), feature_names[S], drop = FALSE]
+        bg_rep[, feature_names[S]] <- obs_rep
+      }
+
+      preds <- pred_wrapper(model, bg_rep)
+      # Moyenne par observation (bloc de n_bg lignes consécutives = 1 observation)
+      v_i[idx_obs] <- vapply(seq_len(n_batch), function(k) {
+        mean(preds[((k - 1) * n_bg + 1):(k * n_bg)])
+      }, numeric(1))
     }
 
-    preds <- pred_wrapper(model, bg_rep)
-    # Moyenne par observation (bloc de n_bg lignes consécutives = 1 observation)
-    v_S[[i]] <- vapply(seq_len(n), function(k) {
-      mean(preds[((k - 1) * n_bg + 1):(k * n_bg)])
-    }, numeric(1))
+    v_S[[i]] <- v_i
+
+    # new (indicateur de progression) — voir commentaire plus haut
+    ecoule <- as.numeric(difftime(Sys.time(), t_debut_shap, units = "secs"))
+    eta    <- (ecoule / i) * (n_subsets - i)
+    .log_progression(sprintf(
+      "  SHAP coalition %d/%d (n=%d obs x n_bg=%d, %d lot(s) de %d) — écoulé %s — restant ~%s",
+      i, n_subsets, n, n_bg, length(batch_starts), batch_size,
+      .format_duree(ecoule), .format_duree(eta)
+    ))
   }
 
   # Combine les v(S) en valeurs de Shapley via la formule de pondération exacte
@@ -503,13 +738,12 @@ make_grid <- function(geopolygon, roi_bbox = NULL, grid_res = 0.05) {
   centroids <- sf::st_centroid(grid_sf)
 
   # Garder uniquement les centroïdes qui tombent dans geopolygon
-  # fix warning : "Spherical geometry switched off/on" et "assumes planar" — messages cosmétiques supprimés
-  suppressMessages({
-    sf::sf_use_s2(FALSE)
-    centroids <- sf::st_intersection(centroids, geopolygon) %>%
-      dplyr::select(geometry)
-    sf::sf_use_s2(TRUE)
-  })
+  # sf_use_s2(FALSE) requis : st_intersection échoue sur certaines géométries ROI avec s2 activé.
+  # Les messages "Spherical geometry switched off/on" et "assumes planar" sont attendus ici.
+  sf::sf_use_s2(FALSE)
+  centroids <- sf::st_intersection(centroids, geopolygon) %>%
+    dplyr::select(geometry)
+  sf::sf_use_s2(TRUE)
 
   coords      <- sf::st_coordinates(centroids)
   coords      <- round(as.data.frame(coords), 3)
@@ -774,11 +1008,30 @@ predict_two_part_uncertainty <- function(newdata, mod_presence, rf_abundance_q,
   #   du pipeline (publiée comme mean_abundance_albopictus dans 02_hebdomadaire.R).
   #   sd_i est approximé à partir de l'intervalle 90% [q05,q95] en supposant une loi
   #   normale (1.645 = quantile normal à 95%, donc q95-q05 couvre 2*1.645 écarts-types).
+  # new (indicateur de progression) : pour un backfill historique (milliers de
+  # lignes x n_sim tirages chacune), cette boucle peut prendre plusieurs minutes.
+  # Affichage périodique (tous les 5% ou au moins toutes les 2000 lignes) plutôt
+  # qu'à chaque ligne, pour ne pas ralentir le calcul avec trop d'I/O de log.
+  n_total_sim  <- nrow(out)
+  pas_affichage <- max(1, min(2000L, ceiling(n_total_sim / 20)))
+  t_debut_sim  <- Sys.time()
+
   sim_res <- purrr::map_dfr(seq_len(nrow(out)), function(i) {
     p_i  <- out$pred_presence_prob[i]
     mu_i <- out$pred_log_abundance_q50[i]
     sd_i <- pmax((out$pred_log_abundance_q95[i] - out$pred_log_abundance_q05[i]) / (2 * 1.645), 1e-6)
     y_sim <- rbinom(n_sim, 1, p_i) * exp(rnorm(n_sim, mu_i, sd_i))
+
+    # new (indicateur de progression) — voir commentaire ci-dessus
+    if (i %% pas_affichage == 0 || i == n_total_sim) {
+      ecoule <- as.numeric(difftime(Sys.time(), t_debut_sim, units = "secs"))
+      eta    <- (ecoule / i) * (n_total_sim - i)
+      .log_progression(sprintf(
+        "  Simulation Monte Carlo : ligne %d/%d (%.0f%%) — écoulé %s — restant ~%s",
+        i, n_total_sim, 100 * i / n_total_sim, .format_duree(ecoule), .format_duree(eta)
+      ))
+    }
+
     tibble::tibble(row_id = i,
            pred_combined_mean = mean(y_sim),
            pred_combined_q05  = quantile(y_sim, 0.05),
