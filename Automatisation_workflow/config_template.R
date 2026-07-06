@@ -34,6 +34,22 @@ n_days_history  <- 365
 # Durée du forecast téléchargé chaque semaine (jours, maximum 16 — limite API)
 n_days_forecast <- 14
 
+# fix (variables manquantes dans ce template — présentes dans config.R réel,
+# nécessaires à 01_initialisation.R/02_hebdomadaire.R, absence = erreur "objet
+# introuvable" lors d'une copie fraîche de ce template) :
+
+# grid_res : résolution de la grille météo en degrés (numérique). Cellsize
+# passé à sf::st_make_grid() dans make_grid(), utilisé aussi pour le snapping
+# des coordonnées dans aggregate_meteo_to_communes().
+grid_res <- 0.05
+
+# Dossier contenant les modèles entraînés (.rds, voir 00_train_models.R)
+path_models <- here::here("models")
+
+# CSV de backup de l'historique météo brut (utilisé par 01_initialisation.R
+# si la BD est vide/incomplète, à défaut de re-télécharger via l'API)
+path_backup <- here::here("data", "meteo_history_backup.csv")
+
 # ============================================================
 # PARAMÈTRES DE SORTIE
 # ============================================================
