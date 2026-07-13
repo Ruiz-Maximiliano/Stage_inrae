@@ -4,16 +4,21 @@
 # Prérequis : Script 1 (initialisation) déjà exécuté
 #
 # CE QUE FAIT CE CODE (dans l'ordre) :
-#   1. Met à jour la météo en BD : remplace le forecast de la semaine passée par
-#      les vraies données historiques, télécharge le forecast de la semaine à venir.
-#      → Agrégation par commune AVANT écriture (nouveau schéma).
-#   2. Lit uniquement les lag_max derniers jours de météo — au lieu
-#      de toute la table — et construit les variables retardées (lags TM/RR/UM).
+#   1. Met à jour la météo en BD (db_table_meteo_grid, format brut X/Y/date/TM/RR/UM) :
+#      remplace le forecast de la semaine passée par les vraies données historiques,
+#      télécharge le forecast de la semaine à venir. ÉCRITURE BRUTE — plus
+#      d'agrégation par commune à l'écriture (point 2, demande Paul).
+#   2. Lit uniquement les lag_max derniers jours de météo (format grille brut),
+#      puis AGRÈGE PAR COMMUNE ICI, À LA LECTURE, via aggregate_meteo_to_roi()
+#      — au lieu de toute la table — et construit les variables retardées
+#      (lags TM/RR/UM) sur le résultat agrégé.
 #   3. Charge les modèles entraînés et génère les prédictions two-part.
 #   4. Calcule le SHAP pour les 4 modèles.
 #   5. Publie 1 table en BD (db_layer) avec prédictions + SHAP.
-#      Plus de rasterize_to_communes pour météo/prédictions — tout est déjà au
-#      niveau commune depuis la BD.
+#
+#   NOTE (point 2) : db_table_meteo (meteo_ruiz, par commune) n'est plus lue ni
+#   écrite par ce script — remplacée par db_table_meteo_grid (format brut par
+#   point de grille). meteo_ruiz reste intacte comme archive.
 #
 # PARAMÈTRES D'ENTRÉE (à fournir) :
 #   Tous viennent de config.R. force_recompute (défaut FALSE) force le recalcul.
@@ -119,14 +124,15 @@ meteo_prep <- coords %>%
 ######################################################
 
 # new (colonne is_forecast) ====
-ensure_is_forecast_column(con, db_table_meteo)
+# new (point 2 — db_table_meteo n'est plus utilisée par ce script) :
+ensure_is_forecast_column(con, db_table_meteo_grid)
 # ==============
 
 # Lecture légère : seulement les 7 derniers jours pour détecter ce qui est encore forecast
 # (optimisation — pas besoin de lire 10 ans pour ce check)
 meteo_recent <- dbGetQuery(con, sprintf(
   "SELECT date, is_forecast FROM %s WHERE date >= '%s' AND date < '%s'",
-  db_table_meteo,
+  db_table_meteo_grid,
   as.character(Sys.Date() - n_days_forecast),  # fenêtre = horizon forecast (config.R)
   as.character(Sys.Date())
 )) %>% as.data.table()
@@ -176,15 +182,16 @@ if (length(dates_a_remplacer) > 0) {
     Sys.sleep(1)
   }
 
-  # Agréger par commune avant écriture
-  comm_updated <- aggregate_meteo_to_communes(meteo_updated, roi, grid_res)
-  comm_updated$is_forecast <- FALSE
+  # new (point 2) : écriture BRUTE (X, Y) — plus d'agrégation par commune ici,
+  # aggregate_meteo_to_roi() est appelée plus bas, à la LECTURE, avant les lags.
+  meteo_updated$is_forecast <- FALSE
+  grid_updated <- meteo_updated %>% dplyr::select(X, Y, date, TM, RR, UM, is_forecast)
 
   dates_sql <- paste(paste0("'", dates_a_remplacer, "'"), collapse = ",")
-  dbExecute(con, sprintf("DELETE FROM %s WHERE date IN (%s)", db_table_meteo, dates_sql))
-  dbWriteTable(con, db_table_meteo, as.data.frame(comm_updated), append = TRUE, row.names = FALSE)
+  dbExecute(con, sprintf("DELETE FROM %s WHERE date IN (%s)", db_table_meteo_grid, dates_sql))
+  dbWriteTable(con, db_table_meteo_grid, as.data.frame(grid_updated), append = TRUE, row.names = FALSE)
 
-  cat("✓ Remplacement historique écrit en BD (", nrow(comm_updated), "lignes)\n")
+  cat("✓ Remplacement historique écrit en BD (", nrow(grid_updated), "lignes)\n")
 } else {
   cat("✓ Historique déjà à jour — aucune date encore marquée forecast dans les 7 derniers jours\n")
 }
@@ -233,13 +240,13 @@ if (forecast_needed) {
     Sys.sleep(1)
   }
 
-  # Agréger par commune avant écriture
-  comm_future <- aggregate_meteo_to_communes(meteo_future, roi, grid_res)
-  comm_future$is_forecast <- TRUE
+  # new (point 2) : écriture BRUTE (X, Y) — plus d'agrégation par commune ici
+  meteo_future$is_forecast <- TRUE
+  grid_future <- meteo_future %>% dplyr::select(X, Y, date, TM, RR, UM, is_forecast)
 
-  dbExecute(con, sprintf("DELETE FROM %s WHERE date >= '%s'", db_table_meteo, Sys.Date()))
-  dbWriteTable(con, db_table_meteo, as.data.frame(comm_future), append = TRUE, row.names = FALSE)
-  cat("✓ Forecast écrit en BD (", nrow(comm_future), "lignes)\n")
+  dbExecute(con, sprintf("DELETE FROM %s WHERE date >= '%s'", db_table_meteo_grid, Sys.Date()))
+  dbWriteTable(con, db_table_meteo_grid, as.data.frame(grid_future), append = TRUE, row.names = FALSE)
+  cat("✓ Forecast écrit en BD (", nrow(grid_future), "lignes)\n")
 } else {
   cat("✓ Forecast déjà à jour en BD pour les", n_days_forecast,
       "jours à venir — téléchargement ignoré\n")
@@ -248,6 +255,50 @@ if (forecast_needed) {
 
 # new: logs =======
 log_print(paste("Forecast nécessaire :", forecast_needed))
+# ==============
+
+# new (test de fraîcheur BD vs backup CSV — demande explicite) ====
+# QUOI : compare la date historique la plus récente en BD (db_table_meteo_grid)
+# avec celle du backup CSV local (path_backup). POURQUOI ICI (hebdomadaire) et
+# pas dans 01_initialisation.R : l'initialisation appelle toujours ce script
+# (voir section 5 de 01_initialisation.R) — un seul endroit à maintenir, comme
+# pour le reste du pipeline. Le backup CSV ne se régénère JAMAIS automatiquement
+# après la siembra initiale (scripts/08_seed_meteo_grid.R) — il se désynchronise
+# donc naturellement de la BD au fil des runs hebdomadaires. Ce test ne fait que
+# le signaler (log + console), il ne corrige rien tout seul.
+cat("\n--- Test de fraîcheur : BD vs backup CSV ---\n")
+
+max_date_bd <- as.Date(dbGetQuery(con, sprintf(
+  "SELECT MAX(date) FROM %s WHERE NOT is_forecast", db_table_meteo_grid
+))[[1]])
+retard_bd <- as.integer(Sys.Date() - max_date_bd)
+cat("BD (", db_table_meteo_grid, ") — dernière date historique :", format(max_date_bd),
+    "(", retard_bd, "jour(s) avant aujourd'hui)\n")
+if (retard_bd > 7) {
+  cat("⚠ La BD a plus de 7 jours de retard sur aujourd'hui — vérifier que le run",
+      "hebdomadaire tourne bien régulièrement.\n")
+  log_print(paste("⚠ BD météo en retard —", retard_bd, "jours sans donnée historique récente"))
+}
+
+if (file.exists(path_backup)) {
+  max_date_backup <- suppressWarnings(max(
+    as.Date(data.table::fread(path_backup, select = "date")$date), na.rm = TRUE
+  ))
+  ecart_backup <- as.integer(max_date_bd - max_date_backup)
+  cat("Backup CSV (", path_backup, ") — dernière date :", format(max_date_backup),
+      "| écart avec la BD :", ecart_backup, "jour(s)\n")
+  if (ecart_backup > 30) {
+    cat("⚠ Le backup CSV a plus de 30 jours de retard sur la BD — envisager de le régénérer",
+        "(re-source 01_initialisation.R, ou exporter manuellement depuis", db_table_meteo_grid, ").\n")
+    log_print(paste("⚠ Backup CSV désynchronisé —", ecart_backup, "jours de retard sur la BD"))
+  }
+} else {
+  max_date_backup <- NA
+  cat("⚠ Backup CSV introuvable (", path_backup, ") — pas de comparaison possible.\n")
+}
+
+log_print(paste("Fraîcheur météo — BD :", format(max_date_bd),
+                "| backup CSV :", if (is.na(max_date_backup)) "absent" else format(max_date_backup)))
 # ==============
 
 ######################################################
@@ -280,15 +331,70 @@ log_print(paste("Forecast nécessaire :", forecast_needed))
 .backfill_plage_fixe <- exists("backfill_start_date") && exists("backfill_end_date")
 # ==============
 
+# new (point 5 — indépendance de la fréquence d'exécution, demande Paul) ====
+# .mode_normal : QUOI = booléen, TRUE seulement pour le run hebdomadaire "normal"
+# (ni backfill par tranches, ni Run 1 historique de 01_initialisation.R).
+# POURQUOI : avant, ce mode prédisait uniquement les LUNDIS (weekday == 1) dans
+# une fenêtre ancrée sur Sys.Date() — ça suppose implicitement un lancement
+# chaque semaine, un jour fixe. Si le script tourne à une autre fréquence
+# (tous les jours, tous les 3 jours, une semaine sautée...), ça pouvait sauter
+# des jours ou en recalculer inutilement. Maintenant : .fenetre_a_predire est
+# l'UNION de deux fenêtres :
+#   - fenetre_fixe       : toujours [Sys.Date() - n_days_forecast, Sys.Date() +
+#                           n_days_forecast] — comportement historique, TOUJOURS
+#                           inclus. Nécessaire pour le Run 2 de 01_initialisation.R
+#                           (SHAP réel) juste après le Run 1 (historique, SHAP
+#                           NA) : le Run 1 publie des lundis jusqu'à l'horizon de
+#                           forecast, donc "dernière prédiction publiée" est déjà
+#                           au maximum — sans fenetre_fixe, le Run 2 croirait
+#                           n'avoir rien à refaire et ne recalculerait JAMAIS le
+#                           SHAP réel des semaines récentes (bug vécu en pratique).
+#   - fenetre_rattrapage : tout ce qui manque depuis la dernière prédiction
+#                          publiée dans db_layer — pour ne rien sauter si le run
+#                          a été espacé plus que d'habitude (le vrai objet du
+#                          point 5).
+# Les modes backfill/init_lookback restent INCHANGÉS (toujours par lundis).
+.mode_normal <- !.backfill_plage_fixe && !exists("init_lookback")
+
+if (.mode_normal) {
+  derniere_prediction <- if (dbExistsTable(con, db_layer)) {
+    as.Date(dbGetQuery(con, sprintf("SELECT MAX(date) FROM %s", db_layer))[[1]])
+  } else {
+    NA
+  }
+
+  fenetre_fixe <- seq(Sys.Date() - n_days_forecast, Sys.Date() + n_days_forecast, by = "day")
+
+  fenetre_rattrapage <- if (is.na(derniere_prediction) ||
+                            derniere_prediction + 1 > Sys.Date() + n_days_forecast) {
+    as.Date(character(0))
+  } else {
+    seq(derniere_prediction + 1, Sys.Date() + n_days_forecast, by = "day")
+  }
+
+  .fenetre_a_predire <- sort(union(fenetre_fixe, fenetre_rattrapage))
+
+  cat("Dernière prédiction publiée :", if (is.na(derniere_prediction)) "aucune" else format(derniere_prediction),
+      "| jours de rattrapage :", length(fenetre_rattrapage),
+      "| jours à prédire (total, fenêtre fixe incluse) :", length(.fenetre_a_predire), "\n")
+  log_print(paste("Dernière prédiction publiée :", if (is.na(derniere_prediction)) "aucune" else format(derniere_prediction),
+                  "| jours de rattrapage :", length(fenetre_rattrapage),
+                  "| jours à prédire (total) :", length(.fenetre_a_predire)))
+}
+# ==============
+
 # Optimisation : lire seulement les lag_max derniers jours au lieu de toute la table.
 # Exception : si init_lookback est défini (depuis 01_initialisation.R), on lit aussi
 # tout l'historique nécessaire pour couvrir tous les lundis historiques + leurs lags.
 # .read_from = Sys.Date() - init_lookback - lag_max pour couvrir le lundi le plus ancien
-# et ses lag_max jours de lags en arrière.
+# et ses lag_max jours de lags en arrière. En mode normal (point 5), on part du jour
+# le plus ancien à prédire (pas forcément aujourd'hui) moins lag_max.
 .read_from <- if (.backfill_plage_fixe) {
   as.Date(backfill_start_date) - lag_max
 } else if (exists("init_lookback")) {
   Sys.Date() - init_lookback - lag_max
+} else if (length(.fenetre_a_predire) > 0) {
+  min(.fenetre_a_predire) - lag_max
 } else {
   Sys.Date() - lag_max
 }
@@ -302,41 +408,57 @@ log_print(paste("Forecast nécessaire :", forecast_needed))
 } else {
   ""
 }
-cat("Lecture de la météo depuis", format(.read_from), "depuis la BD...\n")
-meteo <- dbGetQuery(con, sprintf(
+cat("Lecture de la météo depuis", format(.read_from), "depuis la BD (format grille)...\n")
+# new (point 2) : lecture BRUTE (X, Y, date, TM, RR, UM, is_forecast) depuis
+# db_table_meteo_grid — plus depuis db_table_meteo (par commune, désormais
+# une archive figée). aggregate_meteo_to_roi() reconstruit ensuite le niveau
+# commune ICI, à la lecture, au lieu de l'écriture (voir 00_functions.R).
+meteo_grid_brut <- dbGetQuery(con, sprintf(
   "SELECT * FROM %s WHERE date >= '%s'%s",
-  db_table_meteo, as.character(.read_from), .read_to_clause
-)) %>% as.data.table()
-meteo$date <- as.Date(meteo$date)
+  db_table_meteo_grid, as.character(.read_from), .read_to_clause
+))
+meteo_grid_brut$date <- as.Date(meteo_grid_brut$date)
 # fix : dédupliquer après lecture BD pour éviter le warning many-to-many
-# (des doublons (codgeo, date) peuvent apparaître si la table a été écrite plusieurs fois)
+# (des doublons (X, Y, date) peuvent apparaître si la table a été écrite plusieurs fois)
+meteo_grid_brut <- meteo_grid_brut %>% dplyr::distinct(X, Y, date, .keep_all = TRUE)
+
+cat("Agrégation par commune (aggregate_meteo_to_roi) —", nrow(meteo_grid_brut), "lignes brutes...\n")
+meteo <- aggregate_meteo_to_roi(meteo_grid_brut, roi, grid_res) %>% as.data.table()
+# fix : même précaution qu'avant le passage au format grille — dédupliquer
+# (codgeo, date) après agrégation, avant les lags.
 meteo <- meteo %>% dplyr::distinct(codgeo, date, .keep_all = TRUE)
 
-# meteo2 : tous les lundis disponibles dans la fenêtre météo (passés ET futurs).
-# On inclut les lundis passés pour prédire aussi sur la météo réelle archivée —
+# meteo2 : dates à prédire dans la fenêtre météo (passées ET futures).
+# On inclut les dates passées pour prédire aussi sur la météo réelle archivée —
 # les lags seront calculés avec les valeurs réelles (archive) et non plus les
 # valeurs de forecast de l'époque. na.omit() en aval élimine automatiquement les
-# lundis trop anciens dont les lags dépassent la fenêtre lue (lag_max jours).
-# Avant : filter(weekday == 1, date >= Sys.Date()) → lundis futurs seulement.
-# .lookback : fenêtre pour les lundis à prédire (ignorée en mode plage fixe,
-# où le filtre ci-dessous utilise directement backfill_start_date/end_date).
-# Hebdo normal = n_days_forecast (14 j → 1-2 lundis passés + 2 futurs).
-# Init historique = init_lookback (tous les lundis depuis début de meteo_ruiz).
-.lookback <- if (exists("init_lookback")) init_lookback else n_days_forecast
+# dates trop anciennes dont les lags dépassent la fenêtre lue (lag_max jours).
+#
+# new (point 5) : backfill/init_lookback restent par LUNDIS uniquement (weekday
+# == 1, comportement inchangé). Le mode normal utilise .fenetre_a_predire
+# (calculée plus haut — tous les jours manquants depuis la dernière prédiction
+# publiée), sans restriction de jour de semaine.
+#
+# new (point 5) : group_by(codgeo, date) remplace group_by(codgeo, year, week)
+# — l'ancien groupement supposait au plus 1 date par semaine par commune (vrai
+# uniquement quand on ne prédisait que les lundis). Grouper directement par la
+# date exacte reste correct dans TOUS les cas (1 ou plusieurs dates/semaine).
 meteo2 <- meteo %>%
   dplyr::select(codgeo, date) %>%
-  mutate(year = year(date), week = week(date), weekday = wday(date)) %>%
+  mutate(weekday = wday(date)) %>%
   {
     if (.backfill_plage_fixe) {
       dplyr::filter(., weekday == 1,
                     date >= as.Date(backfill_start_date),
                     date <= as.Date(backfill_end_date))
+    } else if (exists("init_lookback")) {
+      dplyr::filter(., weekday == 1, date >= Sys.Date() - init_lookback)
     } else {
-      dplyr::filter(., weekday == 1, date >= Sys.Date() - .lookback)
+      dplyr::filter(., date %in% .fenetre_a_predire)
     }
   } %>%
   slice(rep(1:n(), each = lag_max)) %>%
-  group_by(codgeo, year, week) %>%
+  group_by(codgeo, date) %>%
   mutate(lag_n = row_number()) %>%
   ungroup() %>%
   dplyr::select(-weekday) %>%
@@ -702,7 +824,7 @@ if (!is.null(res_train$X_combined)) {
 ######################################################
 
 # Nouveau schéma : df_meteo_predictions est déjà par commune (codgeo).
-# Plus besoin de rasterize_to_communes() — on sélectionne directement.
+# Plus besoin de rasterize_to_roi() — on sélectionne directement.
 
 abundance <- df_meteo_predictions %>%
   dplyr::select(codgeo, date, pred_combined_mean) %>%
@@ -729,10 +851,18 @@ combined_sd <- df_meteo_predictions %>%
   dplyr::rename(combined_abundance_sd = pred_combined_sd) %>%
   dplyr::mutate(combined_abundance_sd = round(combined_abundance_sd, 2), date = date + 1)
 
+# new (demande Paul — pred_presence_prob calculée par predict_two_part_uncertainty()
+# mais jamais sélectionnée jusqu'ici, donc jamais écrite en BD) ====
+presence_prob <- df_meteo_predictions %>%
+  dplyr::select(codgeo, date, pred_presence_prob) %>%
+  dplyr::mutate(pred_presence_prob = round(pred_presence_prob, 3), date = date + 1)
+# ==============
+
 abundance <- abundance %>%
-  left_join(combined_q05, by = c("codgeo", "date")) %>%
-  left_join(combined_q95, by = c("codgeo", "date")) %>%
-  left_join(combined_sd,  by = c("codgeo", "date"))
+  left_join(combined_q05,   by = c("codgeo", "date")) %>%
+  left_join(combined_q95,   by = c("codgeo", "date")) %>%
+  left_join(combined_sd,    by = c("codgeo", "date")) %>%
+  left_join(presence_prob,  by = c("codgeo", "date"))
 
 
 ######################################################
@@ -868,6 +998,20 @@ if (!connexion_ok) {
   try(dbDisconnect(con), silent = TRUE)
   con <- .reconnecter_bd()
 }
+
+# new (demande Paul — pred_presence_prob ajoutée au data.frame en amont, mais la
+# table db_layer existe déjà en BD sans cette colonne : st_write(..., append = TRUE)
+# échouerait sinon. ALTER TABLE ... ADD COLUMN IF NOT EXISTS est idempotent, sans
+# effet si la colonne existe déjà — même approche que ensure_is_forecast_column()) ====
+if (dbExistsTable(con, db_layer) &&
+    !("pred_presence_prob" %in% dbListFields(con, db_layer))) {
+  dbExecute(con, sprintf(
+    "ALTER TABLE %s ADD COLUMN pred_presence_prob DOUBLE PRECISION", db_layer
+  ))
+  cat("✓ Colonne pred_presence_prob ajoutée à la table", db_layer, "\n")
+  log_print(paste("✓ Colonne pred_presence_prob ajoutée à la table", db_layer))
+}
+# ==============
 
 # Supprimer uniquement les dates qu'on va écrire (évite les doublons si hebdo
 # tourne deux fois dans la même semaine, et conserve l'historique des semaines passées)

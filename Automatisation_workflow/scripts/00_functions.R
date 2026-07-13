@@ -17,7 +17,7 @@
 #   Les fonctions elles-mêmes : get_weather_history(), get_weather_forecast(),
 #   get_weather_history_batch(), get_weather_forecast_batch(),
 #   get_weather_seasonal_forecast_batch(), .parse_openmeteo_batch() (interne),
-#   rasterize_to_communes(), compute_shap(), predict_two_part_uncertainty().
+#   rasterize_to_roi(), compute_shap(), predict_two_part_uncertainty().
 #
 # PARAMÈTRES PRIS D'AUTRES SCRIPTS :
 #   Aucun à la lecture du fichier — mais au moment de l'EXÉCUTION, les fonctions
@@ -463,9 +463,9 @@ get_weather_seasonal_forecast_batch <- function(latitudes, longitudes, n_months 
 #' @return data.frame : toutes les colonnes du roi (sans géométrie) + date + var_col [SORTIE]
 #'
 #' @examples
-#' mean_tm <- rasterize_to_communes(meteo_comm, "TM", roi)
-#' mean_shap <- rasterize_to_communes(df_pred, "shap_TM_0_4", roi)
-rasterize_to_communes <- function(df, var_col, roi,
+#' mean_tm <- rasterize_to_roi(meteo_comm, "TM", roi)
+#' mean_shap <- rasterize_to_roi(df_pred, "shap_TM_0_4", roi)
+rasterize_to_roi <- function(df, var_col, roi,
                                    x_col    = "X_snap",
                                    y_col    = "Y_snap",
                                    date_col = "date") {
@@ -758,7 +758,7 @@ make_grid <- function(geopolygon, roi_bbox = NULL, grid_res = 0.05) {
 #'
 #' @description
 #' Convertit les données brutes Open-Meteo (site/X/Y) en données agrégées par
-#' commune via rasterize_to_communes(). Appelée dans 01_initialisation.R et
+#' commune via rasterize_to_roi(). Appelée dans 01_initialisation.R et
 #' 02_hebdomadaire.R avant toute écriture en BD — permet de stocker directement
 #' (codgeo, date, TM, RR, UM) au lieu des données brutes par point de grille.
 #'
@@ -766,17 +766,32 @@ make_grid <- function(geopolygon, roi_bbox = NULL, grid_res = 0.05) {
 #' @param roi      Objet sf — communes du ROI                                    [ENTRÉE]
 #' @param grid_res Résolution du grid en degrés (défaut 0.05)                   [ENTRÉE]
 #' @return data.frame (codgeo, date, TM, RR, UM) — une ligne par commune x date [SORTIE]
-aggregate_meteo_to_communes <- function(raw_df, roi, grid_res = 0.05) {
+aggregate_meteo_to_roi <- function(raw_df, roi, grid_res = 0.05) {
+  # fix (bug trouvé en pratique avec debug_missing_communes.R — Pérols et 21 autres
+  # communes du ROI disparaissaient silencieusement de meteo_ruiz) : round() en R
+  # arrondit les .5 exacts vers l'entier PAIR le plus proche ("banker's rounding" —
+  # round(78.5) = 78, pas 79, contrairement à l'arrondi "classique"). Quand une
+  # coordonnée tombe PILE sur une frontière de grille (X / grid_res == un .5 exact,
+  # ex. 3.925 / 0.05 = 78.5), elle se fait décaler d'une cellule entière au lieu de
+  # rester sur place — le point atterrit dans la mauvaise cellule du raster, et la
+  # commune qui comptait sur lui pour être recouverte se retrouve avec des cellules
+  # NA tout autour (NaN à l'extraction dans rasterize_to_roi(), filtré
+  # silencieusement par son !is.nan() final — voir 00_functions.R). Confirmé pas à
+  # pas avec scripts/debug_missing_communes.R sur Pérols (codgeo 34198) : le point
+  # de grille le plus proche (0.68 km) existe bien dans les données brutes tous les
+  # jours, mais se snappait sur la mauvaise cellule à cause de ce .5 exact.
+  # Un petit epsilon avant round() lève l'ambiguïté de façon stable (toujours vers
+  # le haut sur une frontière exacte, jamais au hasard pair/impair).
   raw_df <- raw_df %>%
     dplyr::mutate(
       date   = as.character(as.Date(date)),
-      X_snap = round(X / grid_res) * grid_res,
-      Y_snap = round(Y / grid_res) * grid_res
+      X_snap = round(X / grid_res + 1e-6) * grid_res,
+      Y_snap = round(Y / grid_res + 1e-6) * grid_res
     )
 
-  tm <- rasterize_to_communes(raw_df, "TM", roi) %>% dplyr::select(codgeo, date, TM)
-  rr <- rasterize_to_communes(raw_df, "RR", roi) %>% dplyr::select(codgeo, date, RR)
-  um <- rasterize_to_communes(raw_df, "UM", roi) %>% dplyr::select(codgeo, date, UM)
+  tm <- rasterize_to_roi(raw_df, "TM", roi) %>% dplyr::select(codgeo, date, TM)
+  rr <- rasterize_to_roi(raw_df, "RR", roi) %>% dplyr::select(codgeo, date, RR)
+  um <- rasterize_to_roi(raw_df, "UM", roi) %>% dplyr::select(codgeo, date, UM)
 
   tm %>%
     dplyr::left_join(rr, by = c("codgeo", "date")) %>%

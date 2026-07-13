@@ -8,25 +8,31 @@
 #
 # Génère :
 #   - data/meteo_history_backup.csv (backup local brut par point de grille)
-#   - Table BD <db_table_meteo>    (historique + forecast météo, schéma commune)
+#   - Table BD <db_table_meteo_grid> (historique + forecast météo, format grille brut)
 #
 # CE QUE FAIT CE CODE :
 #   1. Charge le ROI (limites administratives) depuis la BD et construit un grid
 #      de points météo réguliers à l'intérieur de cette zone.
-#   2. Charge l'historique météo :
-#      - Si data/meteo_history_backup.csv existe : relit le CSV, agrège par commune
-#        (rasterize_to_communes), écrit en BD année par année.
-#      - Sinon : télécharge via l'API Open-Meteo par semestre, agrège, écrit en BD.
-#   3. Télécharge un forecast initial (n_days_forecast jours), agrège, écrit en BD.
+#   2. Charge l'historique météo, EN FORMAT BRUT (X, Y, date, TM, RR, UM,
+#      is_forecast) — sans agrégation par commune à l'écriture :
+#      - Si data/meteo_history_backup.csv existe : relit le CSV, écrit en BD
+#        année par année (voir aussi scripts/08_seed_meteo_grid.R pour une
+#        siembra initiale dédiée, plus rapide, hors de ce script).
+#      - Sinon : télécharge via l'API Open-Meteo par semestre, écrit en BD.
+#   3. Télécharge un forecast initial (n_days_forecast jours), écrit en BD brut.
 #   4. Vérifie que les modèles entraînés (00_train_models.R) existent.
 #
-#   Nouveau schéma BD : (codgeo, date, TM, RR, UM, is_forecast)
-#   Plus de colonnes site/X/Y — la météo est directement au niveau commune.
+#   Nouveau schéma BD (point 2, demande Paul) : (X, Y, date, TM, RR, UM, is_forecast)
+#   — retour au format brut par point de grille, dans une table SÉPARÉE
+#   (db_table_meteo_grid), agrégée à la volée par aggregate_meteo_to_roi() au
+#   moment de la LECTURE dans 02_hebdomadaire.R (plus à l'écriture). L'ancienne
+#   table par commune (db_table_meteo, meteo_ruiz) N'EST PLUS ÉCRITE par ce
+#   script — elle reste intacte comme archive au format commune.
 #
 # PARAMÈTRES D'ENTRÉE (à fournir) :
 #   Tous viennent de config.R : db_table_admin, admin_dep, admin_level, roi_bbox,
 #   n_days_history, n_days_forecast, openmeteo_model, db_host/name/port/user/password,
-#   db_table_meteo. Rien à fournir directement dans CE script.
+#   db_table_meteo_grid. Rien à fournir directement dans CE script.
 #
 # PARAMÈTRES CRÉÉS PAR CE CODE :
 #   roi, geopolygon, coords — voir le commentaire au-dessus de chaque variable.
@@ -34,7 +40,7 @@
 # PARAMÈTRES PRIS D'AUTRES SCRIPTS :
 #   - config.R : tous les paramètres listés ci-dessus.
 #   - 00_functions.R : make_grid(), get_weather_history_batch(),
-#     get_weather_forecast_batch(), aggregate_meteo_to_communes().
+#     get_weather_forecast_batch().
 # ============================================================
 
 library(here)
@@ -94,7 +100,7 @@ lf <- log_open(
   show_notes = FALSE
 )
 log_print(paste("=== Run initialisation —", Sys.time(), "==="))
-log_print(paste("Table météo :", db_table_meteo,
+log_print(paste("Table météo (grille) :", db_table_meteo_grid,
                 "| n_days_history :", n_days_history,
                 "| n_days_forecast :", n_days_forecast))
 # ==============
@@ -114,7 +120,9 @@ con <- dbConnect(
 dbExecute(con, "SET statement_timeout = 0")
 
 # new (colonne is_forecast — fraîcheur du remplacement historique) ====
-ensure_is_forecast_column(con, db_table_meteo)
+# new (point 2 — table grille) : db_table_meteo n'est plus écrite par ce script,
+# seule db_table_meteo_grid en a besoin désormais.
+ensure_is_forecast_column(con, db_table_meteo_grid)
 # ==============
 
 # ============================================================
@@ -164,7 +172,7 @@ make_meteo_prep <- function(coords_df, n_days) {
 }
 
 # ============================================================
-# 2. Chargement de l'historique météo → BD (schéma commune)
+# 2. Chargement de l'historique météo → BD (format grille brut, point 2)
 # ============================================================
 
 cat("Chargement de l'historique météo (", n_days_history, "jours)...\n")
@@ -174,47 +182,42 @@ end_date       <- Sys.Date() - 1
 expected_dates <- n_days_history * 0.80
 phase_needed   <- FALSE
 
-# Vérifier ce qui est déjà dans la BD (par codgeo)
-# Si la table existe mais a l'ancien schéma (site/X/Y), la supprimer
-if (dbExistsTable(con, db_table_meteo)) {
-  cols_existantes <- dbGetQuery(con, sprintf(
-    "SELECT column_name FROM information_schema.columns WHERE table_name = '%s'",
-    db_table_meteo
-  ))$column_name
-  if (!"codgeo" %in% cols_existantes) {
-    cat("Table existante avec ancien schéma (site/X/Y) — suppression pour recréation...\n")
-    log_print("Ancien schéma détecté — DROP TABLE avant recréation")
-    dbExecute(con, sprintf("DROP TABLE IF EXISTS %s", db_table_meteo))
-  }
-}
+# new (point 2 — fraîcheur vérifiée par point de grille (X, Y), plus par codgeo) ====
+# db_table_meteo_grid est censée être créée soit par ce script, soit par
+# scripts/08_seed_meteo_grid.R (siembra rapide depuis le backup CSV) — les deux
+# écrivent le même schéma (X, Y, date, TM, RR, UM, is_forecast), donc ce test
+# fonctionne quelle que soit l'origine des données déjà présentes.
+if (dbExistsTable(con, db_table_meteo_grid) &&
+    dbGetQuery(con, sprintf("SELECT COUNT(*) FROM %s", db_table_meteo_grid))[[1]] > 0) {
 
-if (dbExistsTable(con, db_table_meteo) &&
-    dbGetQuery(con, sprintf("SELECT COUNT(*) FROM %s", db_table_meteo))[[1]] > 0) {
-
-  codgeo_check <- dbGetQuery(con, sprintf(
-    "SELECT codgeo::text, COUNT(DISTINCT date) AS n_dates FROM %s WHERE NOT is_forecast GROUP BY codgeo",
-    db_table_meteo
+  # fix : "X"/"Y" entre guillemets doubles — Postgres replie les identifiants non
+  # quotés en minuscules (x/y), alors que dbWriteTable() a créé les colonnes en
+  # conservant la casse R (même sujet que "shap_TM" ailleurs dans le pipeline).
+  grid_check <- dbGetQuery(con, sprintf(
+    'SELECT "X", "Y", COUNT(DISTINCT date) AS n_dates FROM %s WHERE NOT is_forecast GROUP BY "X", "Y"',
+    db_table_meteo_grid
   ))
-  codgeo_ok         <- codgeo_check$codgeo[codgeo_check$n_dates >= expected_dates]
-  # Communes incomplètes = présentes en BD mais avec trop peu de dates
-  # (on exclut les communes absentes de la BD car elles n'ont pas de point de grille)
-  codgeo_incomplets <- codgeo_check$codgeo[codgeo_check$n_dates < expected_dates]
+  grid_ok         <- grid_check[grid_check$n_dates >= expected_dates, ]
+  # Points incomplets = présents en BD mais avec trop peu de dates
+  grid_incomplets <- grid_check[grid_check$n_dates < expected_dates, ]
 
-  cat("BD actuelle :", length(codgeo_check$codgeo), "communes\n")
-  cat("  → Complètes (≥", round(expected_dates), "dates) :", length(codgeo_ok), "\n")
-  cat("  → Incomplètes (présentes mais données insuffisantes) :", length(codgeo_incomplets), "\n")
+  cat("BD actuelle :", nrow(grid_check), "points de grille\n")
+  cat("  → Complets (≥", round(expected_dates), "dates) :", nrow(grid_ok), "\n")
+  cat("  → Incomplets (présents mais données insuffisantes) :", nrow(grid_incomplets), "\n")
   # new: logs =======
-  log_print(paste("BD existante — communes complètes :", length(codgeo_ok),
-                  "| incomplètes :", length(codgeo_incomplets)))
+  log_print(paste("BD existante — points complets :", nrow(grid_ok),
+                  "| incomplets :", nrow(grid_incomplets)))
   # ==============
 
-  if (length(codgeo_incomplets) > 0) {
-    # Supprimer les communes incomplètes pour re-charger proprement
-    codgeo_sql <- paste(paste0("'", codgeo_incomplets, "'"), collapse = ",")
-    dbExecute(con, sprintf(
-      "DELETE FROM %s WHERE codgeo IN (%s) AND NOT is_forecast",
-      db_table_meteo, codgeo_sql
-    ))
+  if (nrow(grid_incomplets) > 0) {
+    # Supprimer les points incomplets pour re-charger proprement (clé composite X, Y
+    # — pas de colonne id unique simple comme codgeo, donc une DELETE par point)
+    for (i in seq_len(nrow(grid_incomplets))) {
+      dbExecute(con, sprintf(
+        'DELETE FROM %s WHERE "X" = %f AND "Y" = %f AND NOT is_forecast',
+        db_table_meteo_grid, grid_incomplets$X[i], grid_incomplets$Y[i]
+      ))
+    }
     phase_needed <- TRUE
   }
 
@@ -225,39 +228,40 @@ if (dbExistsTable(con, db_table_meteo) &&
   log_print("BD vide — chargement complet")
   # ==============
 }
+# ==============
 
 if (phase_needed) {
 
   # ---- Chemin 1 : depuis le backup CSV (rapide, pas d'appel API) ----
   if (file.exists(path_backup)) {
-    cat("Backup CSV trouvé — chargement et agrégation par commune...\n")
+    cat("Backup CSV trouvé — chargement (format grille brut, sans agrégation)...\n")
 
-    # Lecture du backup (format brut par point de grille)
+    # Lecture du backup (format brut par point de grille) — écrit TEL QUEL,
+    # aggregate_meteo_to_roi() n'est plus appelée ici (point 2 : elle se
+    # déplace côté lecture, dans 02_hebdomadaire.R)
     backup <- read.csv(path_backup) %>%
       dplyr::rename(
         TM = temperature_2m_mean,
         RR = precipitation_sum,
         UM = relative_humidity_2m_mean
       ) %>%
-      dplyr::mutate(date = as.Date(date)) %>%
-      # fix : le backup brut n'a pas de colonne is_forecast — on filtre uniquement par date
+      dplyr::mutate(date = as.Date(date), is_forecast = FALSE) %>%
+      dplyr::select(X, Y, date, TM, RR, UM, is_forecast) %>%
       dplyr::filter(date >= start_date)
 
     years <- sort(unique(format(backup$date, "%Y")))
     cat("Années à traiter :", paste(years, collapse = ", "), "\n")
 
     for (yr in years) {
-      cat("Agrégation par commune —", yr, "...\n")
-      yr_data   <- backup %>% dplyr::filter(format(date, "%Y") == yr)
-      comm_data <- aggregate_meteo_to_communes(yr_data, roi, grid_res)
-      comm_data$is_forecast <- FALSE
-      dbWriteTable(con, db_table_meteo, as.data.frame(comm_data),
+      cat("Écriture (format grille) —", yr, "...\n")
+      yr_data <- backup %>% dplyr::filter(format(date, "%Y") == yr)
+      dbWriteTable(con, db_table_meteo_grid, as.data.frame(yr_data),
                    append = TRUE, row.names = FALSE)
       # new: logs =======
-      log_print(paste("Année", yr, ":", nrow(comm_data), "lignes écrites"))
+      log_print(paste("Année", yr, ":", nrow(yr_data), "lignes écrites"))
       # ==============
     }
-    cat("✓ Historique chargé depuis backup CSV\n")
+    cat("✓ Historique chargé depuis backup CSV (format grille)\n")
 
   # ---- Chemin 2 : téléchargement API (fallback si pas de backup) ----
   } else {
@@ -301,18 +305,18 @@ if (phase_needed) {
         Sys.sleep(5)
       }
 
-      # Agréger par commune avant écriture BD
-      comm_data <- aggregate_meteo_to_communes(raw_period, roi, grid_res)
-      comm_data$is_forecast <- FALSE
-      dbWriteTable(con, db_table_meteo, as.data.frame(comm_data),
+      # new (point 2) : écriture BRUTE (X, Y), plus d'agrégation par commune ici
+      raw_period$is_forecast <- FALSE
+      grid_data <- raw_period %>% dplyr::select(X, Y, date, TM, RR, UM, is_forecast)
+      dbWriteTable(con, db_table_meteo_grid, as.data.frame(grid_data),
                    append = TRUE, row.names = FALSE)
       # new: logs =======
       log_print(paste("Période", as.character(p_start), "→", as.character(p_end),
-                      ":", nrow(comm_data), "lignes écrites"))
+                      ":", nrow(grid_data), "lignes écrites"))
       # ==============
       Sys.sleep(60)
     }
-    cat("✓ Historique téléchargé et agrégé par commune\n")
+    cat("✓ Historique téléchargé (format grille)\n")
   }
 }
 
@@ -320,7 +324,7 @@ if (phase_needed) {
 cat("Vérification des lacunes dans l'historique météo...\n")
 dates_bd <- as.Date(dbGetQuery(con, sprintf(
   "SELECT DISTINCT date FROM %s WHERE is_forecast = FALSE ORDER BY date",
-  db_table_meteo
+  db_table_meteo_grid
 ))$date)
 
 if (length(dates_bd) > 1) {
@@ -356,15 +360,19 @@ if (length(dates_bd) > 1) {
 # ============================================================
 
 # new (vérification fraîcheur forecast) ====
+# new (point 2 — fraîcheur vérifiée par point de grille, plus par codgeo) : on
+# compte combien de points de coords ont au moins n_days_forecast dates de
+# forecast déjà en BD — si tous les points téléchargés (coords) sont couverts,
+# pas besoin de retélécharger.
 forecast_needed <- TRUE
 
-if (dbExistsTable(con, db_table_meteo)) {
-  forecast_check    <- dbGetQuery(con, sprintf(
-    "SELECT codgeo::text, COUNT(DISTINCT date) AS n_dates FROM %s WHERE date >= '%s' GROUP BY codgeo",
-    db_table_meteo, as.character(Sys.Date())
-  ))
-  communes_ok      <- forecast_check$codgeo[forecast_check$n_dates >= n_days_forecast]
-  if (all(all_codgeo %in% communes_ok)) forecast_needed <- FALSE
+if (dbExistsTable(con, db_table_meteo_grid)) {
+  # fix : "X"/"Y" quotés (voir plus haut) — sinon Postgres cherche des colonnes x/y minuscules
+  n_points_ok <- dbGetQuery(con, sprintf(
+    'SELECT COUNT(*) AS n FROM (SELECT "X", "Y" FROM %s WHERE date >= \'%s\' GROUP BY "X", "Y" HAVING COUNT(DISTINCT date) >= %d) sub',
+    db_table_meteo_grid, as.character(Sys.Date()), n_days_forecast
+  ))$n
+  if (n_points_ok >= nrow(coords)) forecast_needed <- FALSE
 }
 
 meteo_future <- data.frame()
@@ -402,29 +410,29 @@ if (forecast_needed) {
 }
 
 if (nrow(meteo_future) > 0) {
-  # Agréger par commune et écrire en BD
-  meteo_future_comm <- aggregate_meteo_to_communes(meteo_future, roi, grid_res)
-  meteo_future_comm$is_forecast <- TRUE
-  dbWriteTable(con, db_table_meteo, as.data.frame(meteo_future_comm),
+  # new (point 2) : écriture BRUTE (X, Y), plus d'agrégation par commune ici
+  meteo_future$is_forecast <- TRUE
+  meteo_future_grid <- meteo_future %>% dplyr::select(X, Y, date, TM, RR, UM, is_forecast)
+  dbWriteTable(con, db_table_meteo_grid, as.data.frame(meteo_future_grid),
                append = TRUE, row.names = FALSE)
 }
 # ==============
 
-n_total <- as.integer(dbGetQuery(con, sprintf("SELECT COUNT(*) FROM %s", db_table_meteo))[[1]])
-cat("✓ Météo initiale sauvegardée dans la table BD :", db_table_meteo,
+n_total <- as.integer(dbGetQuery(con, sprintf("SELECT COUNT(*) FROM %s", db_table_meteo_grid))[[1]])
+cat("✓ Météo initiale sauvegardée dans la table BD :", db_table_meteo_grid,
     "(", n_total, "lignes au total)\n")
 # new: logs =======
-log_print(paste("✓ Table météo BD :", db_table_meteo, "|", n_total, "lignes au total",
+log_print(paste("✓ Table météo BD :", db_table_meteo_grid, "|", n_total, "lignes au total",
                 "| forecast téléchargé :", forecast_needed))
 # ==============
 
 # new (backup CSV brut — archive des données par point de grille) ====
 # Le backup est conservé en format BRUT (site/X/Y/temperature_2m_mean/...)
-# pour pouvoir re-migrer vers un autre schéma sans repasser par l'API.
-# Il n'est mis à jour ici que si absent ou si la BD vient d'être rechargée.
-if (!file.exists(path_backup) && dbExistsTable(con, db_table_meteo)) {
-  cat("Pas de backup CSV — génération ignorée (la BD est en schéma commune,",
-      "le backup brut doit être généré depuis les données d'origine).\n")
+# — c'est maintenant le MÊME format que db_table_meteo_grid (voir point 2),
+# donc ce backup reste utile comme fallback/re-siembra (scripts/08_seed_meteo_grid.R).
+if (!file.exists(path_backup) && dbExistsTable(con, db_table_meteo_grid)) {
+  cat("Pas de backup CSV — génération ignorée (à régénérer manuellement si besoin,",
+      "voir path_backup dans config.R).\n")
 }
 # ==============
 
@@ -450,10 +458,10 @@ cat("✓ Modèles entraînés détectés :", length(rds_files), "fichiers RDS\n"
 log_print(paste("✓ Modèles détectés :", paste(rds_files, collapse = ", ")))
 # ==============
 
-# Récupérer la date min de meteo_ruiz avant de fermer la connexion
+# Récupérer la date min de meteo_ruiz_grid avant de fermer la connexion
 # (nécessaire pour calculer init_lookback dans la section 5 ci-dessous)
 meteo_min_date <- as.Date(dbGetQuery(con, sprintf(
-  "SELECT MIN(date) FROM %s", db_table_meteo))[[1]])
+  "SELECT MIN(date) FROM %s", db_table_meteo_grid))[[1]])
 
 dbDisconnect(con)
 cat("\n✓ Météo initialisée. Lancement du pipeline de prédictions...\n")
