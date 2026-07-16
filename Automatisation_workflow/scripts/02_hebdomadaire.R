@@ -128,33 +128,41 @@ meteo_prep <- coords %>%
 ensure_is_forecast_column(con, db_table_meteo_grid)
 # ==============
 
-# Lecture légère : seulement les 7 derniers jours pour détecter ce qui est encore forecast
-# (optimisation — pas besoin de lire 10 ans pour ce check)
-meteo_recent <- dbGetQuery(con, sprintf(
-  "SELECT date, is_forecast FROM %s WHERE date >= '%s' AND date < '%s'",
-  db_table_meteo_grid,
-  as.character(Sys.Date() - n_days_forecast),  # fenêtre = horizon forecast (config.R)
-  as.character(Sys.Date())
-)) %>% as.data.table()
-meteo_recent$date <- as.Date(meteo_recent$date)
+# ---- Étape 1 : Remplacer forecast (et combler les trous) par historical ----
+# fix (bug signalé par Paul, 2026-07-13) : l'ancienne version ne regardait que
+# les n_days_forecast (14) derniers jours pour détecter les dates encore
+# marquées forecast — si le pipeline ne tourne pas pendant plus longtemps que
+# ça (ex. 2 mois d'arrêt), les dates plus anciennes que cette fenêtre
+# restaient forecast POUR TOUJOURS, jamais remplacées par le vrai historique,
+# sans aucune trace de l'erreur. Nouvelle logique, sans fenêtre fixe : on
+# regarde la DERNIÈRE date réellement historique (is_forecast = FALSE) en BD,
+# et on télécharge tout ce qui manque depuis cette date jusqu'à hier — peu
+# importe la taille du trou.
+derniere_date_reelle <- as.Date(dbGetQuery(con, sprintf(
+  "SELECT MAX(date) FROM %s WHERE NOT is_forecast", db_table_meteo_grid
+))[[1]])
 
-# ---- Étape 1 : Remplacer forecast de la semaine passée par historical ----
-# new (fix — ne retélécharger que ce qui est ENCORE marqué forecast) ====
-dates_a_remplacer <- unique(meteo_recent$date[meteo_recent$is_forecast %in% TRUE])
-# ==============
+dates_a_remplacer <- if (is.na(derniere_date_reelle)) {
+  # Table vide ou jamais alimentée en historique réel — rien à faire ici
+  # (01_initialisation.R s'occupe du premier chargement complet).
+  as.Date(character(0))
+} else if (derniere_date_reelle >= Sys.Date() - 1) {
+  # Déjà à jour jusqu'à hier — rien à remplacer.
+  as.Date(character(0))
+} else {
+  seq(derniere_date_reelle + 1, Sys.Date() - 1, by = "day")
+}
 
 # new: logs =======
-cat("Dates à remplacer (forecast → historical) :", length(dates_a_remplacer), "\n")
-if (length(dates_a_remplacer) > 0) {
-  log_print(paste("Dates à remplacer (forecast → historical) :",
-                  paste(sort(dates_a_remplacer), collapse = ", ")))
-} else {
-  log_print("Dates à remplacer (forecast → historical) : aucune")
-}
+cat("Dernière date historique réelle en BD :", if (is.na(derniere_date_reelle)) "aucune" else format(derniere_date_reelle),
+    "| dates à remplacer (forecast/trous → historical) :", length(dates_a_remplacer), "\n")
+log_print(paste("Dernière date historique réelle :", if (is.na(derniere_date_reelle)) "aucune" else format(derniere_date_reelle),
+                "| dates à remplacer :", length(dates_a_remplacer)))
 # ==============
 
 if (length(dates_a_remplacer) > 0) {
-  cat("Remplacement forecast -> historical pour", length(dates_a_remplacer), "dates\n")
+  cat("Remplacement forecast/trous -> historical pour", length(dates_a_remplacer), "dates (",
+      format(min(dates_a_remplacer)), "→", format(max(dates_a_remplacer)), ")\n")
 
   meteo_updated <- data.frame()
 
@@ -187,13 +195,17 @@ if (length(dates_a_remplacer) > 0) {
   meteo_updated$is_forecast <- FALSE
   grid_updated <- meteo_updated %>% dplyr::select(X, Y, date, TM, RR, UM, is_forecast)
 
-  dates_sql <- paste(paste0("'", dates_a_remplacer, "'"), collapse = ",")
-  dbExecute(con, sprintf("DELETE FROM %s WHERE date IN (%s)", db_table_meteo_grid, dates_sql))
+  # fix : BETWEEN plutôt qu'un IN(...) — dates_a_remplacer est une plage
+  # continue, une borne min/max suffit et reste lisible même sur 2 mois de trous.
+  dbExecute(con, sprintf(
+    "DELETE FROM %s WHERE date >= '%s' AND date <= '%s'",
+    db_table_meteo_grid, as.character(min(dates_a_remplacer)), as.character(max(dates_a_remplacer))
+  ))
   dbWriteTable(con, db_table_meteo_grid, as.data.frame(grid_updated), append = TRUE, row.names = FALSE)
 
   cat("✓ Remplacement historique écrit en BD (", nrow(grid_updated), "lignes)\n")
 } else {
-  cat("✓ Historique déjà à jour — aucune date encore marquée forecast dans les 7 derniers jours\n")
+  cat("✓ Historique déjà à jour jusqu'à hier — rien à remplacer\n")
 }
 
 # ---- Étape 2 : Télécharger la nouvelle semaine de forecast ----
