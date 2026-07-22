@@ -4,31 +4,21 @@
 # - Abundance model: quantile RF regression
 # - Combined prediction: expected abundance + uncertainty interval
 ###########################
-# Code original (workflow_ruiz.R) — quasiment inchangé. Les seuls
-# écarts par rapport à l'original sont marqués par un commentaire
-# "# change : ..." à l'endroit exact où ils se produisent (chemins de
-# fichiers adaptés à l'arborescence du pipeline, fonction
-# predict_two_part_uncertainty centralisée dans 00_functions.R pour être
-# partagée avec 02_hebdomadaire.R, un 4e RDS ajouté pour le SHAP, et la
-# correction d'un bug (presence_perf non défini)).
+# Adapté du code de recherche original (workflow_ruiz.R) pour s'intégrer au
+# pipeline : predict_two_part_uncertainty() est centralisée dans
+# 00_functions_models.R (partagée avec 02_hebdomadaire.R), un 4e RDS est
+# sauvegardé pour servir de background au calcul SHAP, et les chemins de
+# fichiers pointent vers l'arborescence du pipeline (path_models, data/).
 library(tidyverse)
 library(caret)
 library(CAST)
 library(ranger)
 library(correlation)
-
-# change : ajout de here()/source() — nécessaires pour intégrer ce script au
-# pipeline (chemins relatifs à la racine du projet RStudio, et accès à
-# predict_two_part_uncertainty() qui est centralisée dans 00_functions.R
-# au lieu d'être redéfinie ici, pour ne pas dupliquer le même code dans
-# 00_train_models.R ET 02_hebdomadaire.R).
 library(here)
-# new: logs =======
 library(logr)
-# ==============
-source(here("scripts", "00_functions.R"))
 
-# new: logs =======
+source(here("scripts", "00_functions_models.R"))
+
 dir.create(here("logs"), showWarnings = FALSE, recursive = TRUE)
 lf <- log_open(
   here("logs", paste0("train_models_", Sys.Date(), ".log")),
@@ -36,7 +26,6 @@ lf <- log_open(
   show_notes = FALSE
 )
 log_print(paste("=== Run entraînement modèles —", Sys.time(), "==="))
-# ==============
 
 set.seed(123)
 
@@ -44,14 +33,8 @@ set.seed(123)
 # 1. DATA PREPARATION
 ###########################
 
-# change : chemin adapté — le fichier réel est dans data/, pas data/processed/
-# (le code original pointait vers data/processed/df_to_model.csv, qui
-# n'existe pas dans ce projet).
 path_df_model <- here("data", "df_to_model.csv")
-# change : dossier dédié pour les modèles (le code original sauvegardait les
-# .rds directement dans le répertoire de travail) — nécessaire pour que
-# 02_hebdomadaire.R puisse les retrouver de façon fiable via path_models.
-path_models <- here("models")
+path_models   <- here("models")
 dir.create(path_models, showWarnings = FALSE)
 
 df_model <- read.csv(path_df_model) %>%
@@ -142,12 +125,9 @@ cv_quantile_rf <- function(data,
   bind_rows(fold_preds)
 }
 
-# change : predict_two_part_uncertainty() était définie ici dans le code
-# original. Elle est maintenant centralisée dans 00_functions.R (sourcée
-# plus haut) car 02_hebdomadaire.R en a aussi besoin pour les prédictions
-# hebdomadaires — la garder à un seul endroit évite que les deux fichiers
-# divergent si elle est modifiée un jour. Le corps de la fonction est
-# identique à l'original, voir 00_functions.R::predict_two_part_uncertainty().
+# predict_two_part_uncertainty() est définie dans 00_functions_models.R
+# (sourcée plus haut) — partagée avec 02_hebdomadaire.R pour les prédictions
+# hebdomadaires, afin de garder une seule version de la fonction.
 
 ###########################
 # 4. PRESENCE MODEL (LOSO-CV)
@@ -354,13 +334,6 @@ abundance_perf_by_site <- df_cv_abundance_quantiles %>%
     n = n()
   )
 
-# change : dans le code original, ce résumé n'était ni assigné ni affiché
-# explicitement (juste une expression flottante en fin de section) — si ce
-# script est exécuté via source() (ce qui est le cas dans ce pipeline,
-# main.R/00_train_models.R), R n'affiche PAS automatiquement ce genre
-# d'expression non assignée, donc le résultat serait silencieusement perdu.
-# Je l'assigne à une variable et l'affiche explicitement avec print() pour
-# qu'il soit visible, comme les 3 autres résumés ci-dessus.
 expected_abundance_perf_by_site <- df_cv_combined %>%
   filter(!is.na(pred_expected_abundance)) %>%
   group_by(site) %>%
@@ -375,14 +348,12 @@ cat("\n--- Performance abondance (global) ---\n"); print(abundance_perf)
 cat("\n--- Performance abondance par site ---\n"); print(abundance_perf_by_site)
 cat("\n--- Performance abondance attendue (présence x abondance) par site ---\n")
 print(expected_abundance_perf_by_site)
-# new: logs =======
 log_print(paste("AUC présence — médiane par site :", round(median(auc_by_site$auc, na.rm = TRUE), 3),
                 "| min :", round(min(auc_by_site$auc, na.rm = TRUE), 3),
                 "| max :", round(max(auc_by_site$auc, na.rm = TRUE), 3)))
 log_print(paste("Performance abondance (global) — Spearman :", round(abundance_perf$spearman, 3),
                 "| MAE :", round(abundance_perf$mae, 3),
                 "| Couverture 90% :", round(abundance_perf$coverage90, 3)))
-# ==============
 
 ###########################
 # 10. SAVE OUTPUTS
@@ -393,7 +364,7 @@ saveRDS(
     df_cv = df_cv_presence,
     df_mod = df_model_presence
   ),
-  file.path(path_models, "res_presence_LOSO_probabilistic.rds")  # change : chemin dans path_models (voir section 1)
+  file.path(path_models, "res_presence_LOSO_probabilistic.rds")
 )
 
 saveRDS(
@@ -403,29 +374,26 @@ saveRDS(
     df_cv_quantiles = df_cv_abundance_quantiles,
     df_mod = df_model_abundance
   ),
-  file.path(path_models, "res_abundance_LOSO_quantile_rf.rds")  # change : chemin dans path_models
+  file.path(path_models, "res_abundance_LOSO_quantile_rf.rds")
 )
 
 saveRDS(
   list(
     df_cv_combined = df_cv_combined,
     df_pred_uncertainty = df_pred_uncertainty,
-    presence_perf = auc_by_site,  # change : le code original mettait "presence_perf = presence_perf",
-                                   # mais cette variable n'existe pas (n'est jamais définie ailleurs dans
-                                   # le script) — ça aurait fait planter le saveRDS(). auc_by_site est la
-                                   # métrique de performance du modèle de présence calculée en section 9,
-                                   # donc c'est elle qui correspond à l'intention du nom "presence_perf".
+    # presence_perf = auc_by_site : métrique de performance du modèle de
+    # présence calculée en section 9 (AUC par site).
+    presence_perf = auc_by_site,
     abundance_perf = abundance_perf,
     abundance_perf_by_site = abundance_perf_by_site
   ),
-  file.path(path_models, "res_two_part_LOSO_uncertainty_combined.rds")  # change : chemin dans path_models
+  file.path(path_models, "res_two_part_LOSO_uncertainty_combined.rds")
 )
 
-# change : RDS additionnel, absent du code original — nécessaire pour le calcul
-# SHAP dans 02_hebdomadaire.R, qui a besoin d'un jeu de données de référence
-# (background) pour expliquer le modèle de présence (forêt de probabilité,
-# voir compute_shap()/.shapley_exact() dans 00_functions.R). X_presence est
-# effectivement utilisé (res_train$X_presence) ; X_abundance/df_model sont
+# Jeu de données de référence (background) pour le calcul SHAP dans
+# 02_hebdomadaire.R, qui explique le modèle de présence (forêt de
+# probabilité) via compute_shap()/.shapley_exact() (00_functions_models.R).
+# X_presence est utilisé (res_train$X_presence) ; X_abundance/df_model sont
 # gardés en plus pour un usage futur éventuel (diagnostic, SHAP abondance).
 X_presence  <- as.data.frame(df_model_presence[, predictors_presence])
 X_abundance <- as.data.frame(df_model_abundance[, predictors_abundance])
@@ -467,11 +435,8 @@ p_abundance <- ggplot(df_cv_combined, aes(x = date)) +
     title = "Observed vs predicted abundance (LOSO-CV quantile RF)",
     subtitle = "Grey band = 90% prediction interval"
   )
-#ggsave(file.path(path_models, "plot_abundance_LOSO_quantile_rf.png"), p_abundance, width = 10, height = 6)  # change : chemin dans path_models, le reste (ggsave commenté) est identique à l'original
+#ggsave(file.path(path_models, "plot_abundance_LOSO_quantile_rf.png"), p_abundance, width = 10, height = 6)
 
-cat("\n✓ Entraînement terminé. Fichiers sauvegardés dans", path_models, "\n")
-# new: logs =======
 log_print(paste("✓ Modèles sauvegardés dans", path_models))
 log_print(paste("=== Fin du run entraînement —", Sys.time(), "==="))
 log_close()
-# ==============

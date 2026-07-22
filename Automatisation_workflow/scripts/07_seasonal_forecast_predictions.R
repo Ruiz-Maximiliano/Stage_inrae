@@ -6,10 +6,10 @@
 #
 # CE QUE FAIT CE CODE :
 #   1. Télécharge le forecast saisonnier (moyenne d'ensemble, ~6 mois par
-#      défaut) via get_weather_seasonal_forecast_batch() (00_functions.R),
+#      défaut) via get_weather_seasonal_forecast_batch() (00_functions_api.R),
 #      pour tous les points du grid — même découpage par paquets de 20 que
 #      le forecast classique dans 02_hebdomadaire.R.
-#   2. Agrège par commune (aggregate_meteo_to_communes(), identique au reste
+#   2. Agrège par commune (aggregate_meteo_to_roi(), identique au reste
 #      du pipeline).
 #   3. Lit UNIQUEMENT en lecture la météo réelle récente de meteo_ruiz (les
 #      lag_max=84 derniers jours) — sert de "buffer" pour calculer les lags
@@ -18,25 +18,22 @@
 #   4. Concatène météo réelle récente + forecast saisonnier en une seule série
 #      continue par commune, puis construit les lags (TM_0_8, UM_5_11, TM_0_4,
 #      UM_0_11, RR_1_5) pour TOUS les lundis du forecast saisonnier (~26
-#      semaines) — même logique exacte (fun_summarize_week/fun_ccm_df) que
-#      02_hebdomadaire.R, dupliquée ici volontairement (pas refactorée en
-#      fonction partagée) pour ne prendre AUCUN risque sur le pipeline
-#      hebdomadaire de production.
+#      semaines) via fun_summarize_week()/fun_ccm_df() (00_functions_formats.R,
+#      partagées avec 02_hebdomadaire.R).
 #   5. Prédit avec le modèle COMBINÉ habituel (predict_two_part_uncertainty())
 #      — présence x abondance, exactement comme partout ailleurs dans le
-#      pipeline. PAS de SHAP dans cette version (décision : coûterait ~1.5-2h
-#      de plus pour une table exploratoire — voir 05_backfill_shap.R pour le
-#      détail de ce coût).
+#      pipeline. Pas de SHAP dans cette version (coûterait ~1.5-2h de plus
+#      pour une table exploratoire — voir 05_backfill_shap.R pour le détail
+#      de ce coût).
 #   6. Publie dans db_layer_seasonal (table de TEST, overwrite = TRUE à chaque
 #      run — un nouveau run remplace entièrement l'ancien forecast saisonnier,
 #      qui n'a de sens que "vu depuis aujourd'hui").
 #
-# LIMITE ASSUMÉE (voir échange avec l'utilisateur) : pour les semaines à 4-6
-# mois, les lags (jusqu'à 84 jours en arrière) portent sur des données qui
-# sont ELLES-MÊMES du forecast saisonnier, pas de la météo réelle — c'est
-# assumé comme acceptable pour cette première version (prévision sur
-# prévision, incertitude croissante avec l'horizon, cohérent avec la nature
-# même d'un forecast saisonnier).
+# LIMITE ASSUMÉE : pour les semaines à 4-6 mois, les lags (jusqu'à 84 jours en
+# arrière) portent sur des données qui sont ELLES-MÊMES du forecast
+# saisonnier, pas de la météo réelle — assumé comme acceptable pour cette
+# première version (prévision sur prévision, incertitude croissante avec
+# l'horizon, cohérent avec la nature même d'un forecast saisonnier).
 #
 # PARAMÈTRES À AJUSTER :
 #   n_months_seasonal → horizon en mois (1-9, limite de l'API), défaut 6.
@@ -62,7 +59,9 @@ library(RPostgres)
 library(caret)
 library(ranger)
 
-source(here("scripts", "00_functions.R"))
+source(here("scripts", "00_functions_api.R"))
+source(here("scripts", "00_functions_formats.R"))
+source(here("scripts", "00_functions_models.R"))
 source(here("config.R"))
 
 options(datatable.week = "legacy")
@@ -141,7 +140,7 @@ for (i in seq_along(meteo_prep)) {
                   X = longitude, Y = latitude)
 
   # UM peut être absente selon le modèle saisonnier (voir doc de
-  # get_weather_seasonal_forecast_batch() dans 00_functions.R)
+  # get_weather_seasonal_forecast_batch() dans 00_functions_api.R)
   if ("relative_humidity_2m_mean" %in% colnames(th_res)) {
     th_res <- th_res %>% dplyr::rename(UM = relative_humidity_2m_mean)
   } else {
@@ -161,7 +160,7 @@ if (all(is.na(meteo_seasonal$UM))) {
 cat("✓ Forecast saisonnier téléchargé (", nrow(meteo_seasonal), "lignes brutes par point )\n")
 
 # Agrégation par commune — identique à la météo régulière du pipeline
-comm_seasonal <- aggregate_meteo_to_communes(meteo_seasonal, roi, grid_res)
+comm_seasonal <- aggregate_meteo_to_roi(meteo_seasonal, roi, grid_res)
 cat("✓ Agrégé par commune (", nrow(comm_seasonal), "lignes commune x date )\n")
 
 ######################################################
@@ -196,8 +195,8 @@ cat("✓ Série continue construite —", nrow(meteo), "lignes (",
 ######################################################
 ######### 4. Construction des lags — même logique que 02_hebdomadaire.R
 ######################################################
-# Copie volontaire de fun_summarize_week()/fun_ccm_df() (pas de refactor en
-# fonction partagée) — voir bandeau en tête de fichier.
+# fun_summarize_week()/fun_ccm_df() définies dans 00_functions_formats.R
+# (partagées avec 02_hebdomadaire.R).
 
 meteo2 <- meteo %>%
   dplyr::select(codgeo, date) %>%
@@ -220,86 +219,11 @@ meteo3 <- meteo2 %>%
   pivot_longer(c(TM, RR, UM), names_to = "var", values_to = "val") %>%
   data.table()
 
-fun_summarize_week <- function(meteo3, var_to_summarize, fun_summarize,
-                                new_var_name, n_days_agg) {
-
-  if (fun_summarize == "sum") {
-    meteo3_summarize <- meteo3[var == var_to_summarize][
-      , lag_n := floor(lag_n / n_days_agg)][
-        , year := year(date)][
-          , .(val = sum(val, na.rm = TRUE), date = max(date)),
-          by = .(codgeo, th_date, lag_n, year)][
-            , lag_n := seq(0, .N - 1), by = .(codgeo, th_date)][
-              , var := new_var_name][, year := NULL]
-
-  } else if (fun_summarize == "mean") {
-    meteo3_summarize <- meteo3[var == var_to_summarize][
-      , lag_n := floor(lag_n / n_days_agg)][
-        , year := year(date)][
-          , .(val = mean(val, na.rm = TRUE), date = max(date)),
-          by = .(codgeo, th_date, lag_n, year)][
-            , lag_n := seq(0, .N - 1), by = .(codgeo, th_date)][
-              , var := new_var_name][, year := NULL]
-
-  } else if (fun_summarize == "max") {
-    meteo3_summarize <- meteo3[var == var_to_summarize][
-      , lag_n := floor(lag_n / n_days_agg)][
-        , year := year(date)][
-          , .(val = max(val, na.rm = TRUE), date = max(date)),
-          by = .(codgeo, th_date, lag_n, year)][
-            , lag_n := seq(0, .N - 1), by = .(codgeo, th_date)][
-              , var := new_var_name][, year := NULL]
-
-  } else if (fun_summarize == "min") {
-    meteo3_summarize <- meteo3[var == var_to_summarize][
-      , lag_n := floor(lag_n / n_days_agg)][
-        , year := year(date)][
-          , .(val = min(val, na.rm = TRUE), date = max(date)),
-          by = .(codgeo, th_date, lag_n, year)][
-            , lag_n := seq(0, .N - 1), by = .(codgeo, th_date)][
-              , var := new_var_name][, year := NULL]
-  }
-
-  data.table(meteo3_summarize)
-}
-
 df_meteo_pieges_summ <- fun_summarize_week(meteo3, "RR", "sum",  "RR", 7) %>%
   bind_rows(fun_summarize_week(meteo3, "TM", "mean", "TM", 7)) %>%
   bind_rows(fun_summarize_week(meteo3, "UM", "mean", "UM", 7))
 
 df_meteo_pieges_summ <- df_meteo_pieges_summ %>% filter(lag_n < 12)
-
-fun_ccm_df <- function(df_timeseries, varr, function_to_apply) {
-
-  df_timeseries_wide <- df_timeseries %>%
-    filter(var == varr) %>%
-    dplyr::select(-c("date", "var")) %>%
-    arrange(lag_n) %>%
-    pivot_wider(values_from = val, names_from = lag_n,
-                names_prefix = paste0(varr, "_"))
-
-  max_col <- ncol(df_timeseries_wide)
-
-  for (i in 3:(max_col - 1)) {
-    for (j in (i + 1):max_col) {
-      column_name <- paste0(colnames(df_timeseries_wide[i]), "_", (j - 2))
-      if (function_to_apply == "mean") {
-        df_timeseries_wide[column_name] <- rowMeans(df_timeseries_wide[, i:j], na.rm = TRUE)
-      } else if (function_to_apply == "sum") {
-        df_timeseries_wide[column_name] <- rowSums(df_timeseries_wide[, i:j], na.rm = TRUE)
-      }
-    }
-  }
-
-  for (i in 3:max_col) {
-    colnames(df_timeseries_wide)[i] <- paste0(
-      colnames(df_timeseries_wide)[i], "_",
-      sub(".*\\_", "", colnames(df_timeseries_wide)[i])
-    )
-  }
-
-  df_timeseries_wide
-}
 
 df_meteo_pieges_summ_wide1 <- fun_ccm_df(df_meteo_pieges_summ, "RR", "sum")
 df_meteo_pieges_summ_wide2 <- fun_ccm_df(df_meteo_pieges_summ, "TM", "mean")
@@ -427,8 +351,8 @@ seasonal_predictions <- seasonal_predictions %>%
 cat("Écriture dans", db_layer_seasonal,
     "(table de test — overwrite complet à chaque run, ce n'est PAS albopictus_ruiz_test)\n")
 
-# fix : overwrite = TRUE est déprécié dans les versions récentes de sf/st_write() —
-# delete_layer = TRUE le remplace (supprime la table existante puis la recrée).
+# delete_layer = TRUE (plutôt que overwrite = TRUE, déprécié dans les versions
+# récentes de sf/st_write()) : supprime la table existante puis la recrée.
 # Sans risque ici : db_layer_seasonal est une table de TEST (test_seasonal_ruiz),
 # jamais meteo_ruiz ni albopictus_ruiz_test.
 st_write(seasonal_predictions, dsn = con, layer = db_layer_seasonal, delete_layer = TRUE)
