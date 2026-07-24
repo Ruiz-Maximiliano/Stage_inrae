@@ -40,7 +40,7 @@ n_days_forecast <- 14
 
 # grid_res : résolution de la grille météo en degrés (numérique). Cellsize
 # passé à sf::st_make_grid() dans make_grid(), utilisé aussi pour le snapping
-# des coordonnées dans aggregate_meteo_to_communes().
+# des coordonnées dans aggregate_meteo_to_roi().
 grid_res <- 0.05
 
 # Dossier contenant les modèles entraînés (.rds, voir 00_train_models.R)
@@ -64,5 +64,36 @@ db_password <- "VOTRE_MOT_DE_PASSE"
 # Table météo — stockage de l'historique + forecast
 db_table_meteo <- "meteo"
 
+# Table météo — format BRUT par point de grille (X, Y, date, TM, RR, UM,
+# is_forecast), voir config.R pour le détail. Table séparée de db_table_meteo.
+db_table_meteo_grid <- "meteo_grid"
+
 # Table de prédictions publiée chaque semaine (prédictions + valeurs SHAP, fusionnées)
 db_layer <- "albopictus_predictions"
+
+# Vues matérielles — moyenne par commune/semaine sur 10 ans et 2 ans
+# (comparatif page web, voir config.R pour le détail)
+db_table_mean_10y <- "mean_10y"
+db_table_mean_2y  <- "mean_2y"
+
+# ============================================================
+# ROI — chargé ici (demande Paul, revue de code) pour ne pas dupliquer ce
+# bloc dans chaque script. Connexion BD TEMPORAIRE, ouverte et refermée
+# uniquement pour cette lecture — config.R ne garde aucune connexion ouverte.
+# ============================================================
+
+# roi : QUOI = objet sf (polygones des communes du département admin_dep),
+#   projetés en EPSG:4326. FAIT = lu une seule fois ici, disponible dans
+#   tous les scripts qui font source(here("config.R")) — 01_initialisation.R,
+#   02_hebdomadaire.R, 07_seasonal_forecast_predictions.R, etc. n'ont plus
+#   besoin de le recharger chacun de leur côté.
+.con_roi <- DBI::dbConnect(
+  RPostgres::Postgres(),
+  host = db_host, dbname = db_name, port = db_port,
+  user = db_user, password = db_password
+)
+roi <- sf::st_read(.con_roi, db_table_admin) |>
+  dplyr::filter(dep == admin_dep, level == admin_level)
+roi <- sf::st_transform(roi, 4326)
+DBI::dbDisconnect(.con_roi)
+rm(.con_roi)

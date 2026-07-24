@@ -93,11 +93,10 @@ con <- dbConnect(
 dbExecute(con, "SET statement_timeout = 0")
 
 # ============================================================
-# ROI + grid (identique à 02_hebdomadaire.R)
+# ROI (déjà chargé par config.R) + grid
 # ============================================================
-roi <- sf::st_read(con, db_table_admin) %>%
-  dplyr::filter(dep == admin_dep, level == admin_level)
-roi <- st_transform(roi, 4326)
+# roi vient de config.R (lu une seule fois là-bas, connexion temporaire —
+# voir config.R) — plus besoin de le recharger ici.
 
 sf::sf_use_s2(FALSE)
 roi <- st_make_valid(roi)

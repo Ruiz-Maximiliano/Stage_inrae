@@ -11,8 +11,8 @@
 #   - Table BD <db_table_meteo_grid> (historique + forecast météo, format grille brut)
 #
 # CE QUE FAIT CE CODE :
-#   1. Charge le ROI (limites administratives) depuis la BD et construit un grid
-#      de points météo réguliers à l'intérieur de cette zone.
+#   1. Construit un grid de points météo réguliers à l'intérieur du ROI (le
+#      ROI lui-même est chargé une seule fois dans config.R, pas ici).
 #   2. Charge l'historique météo, EN FORMAT BRUT (X, Y, date, TM, RR, UM,
 #      is_forecast) — sans agrégation par commune à l'écriture :
 #      - Si data/meteo_history_backup.csv existe : relit le CSV, écrit en BD
@@ -35,10 +35,11 @@
 #   db_table_meteo_grid. Rien à fournir directement dans CE script.
 #
 # PARAMÈTRES CRÉÉS PAR CE CODE :
-#   roi, geopolygon, coords — voir le commentaire au-dessus de chaque variable.
+#   geopolygon, coords — voir le commentaire au-dessus de chaque variable.
 #
 # PARAMÈTRES PRIS D'AUTRES SCRIPTS :
-#   - config.R : tous les paramètres listés ci-dessus.
+#   - config.R : tous les paramètres listés ci-dessus, plus roi (objet sf,
+#     déjà chargé et transformé en EPSG:4326 dans config.R).
 #   - 00_functions_api.R : get_weather_history_batch(), get_weather_forecast_batch().
 #   - 00_functions_formats.R : make_grid(), ensure_is_forecast_column().
 # ============================================================
@@ -114,14 +115,11 @@ dbExecute(con, "SET statement_timeout = 0")
 ensure_is_forecast_column(con, db_table_meteo_grid)
 
 # ============================================================
-# 1. Chargement du ROI et création du grid
+# 1. ROI (déjà chargé par config.R) et création du grid
 # ============================================================
 
-cat("Chargement du ROI depuis la BD...\n")
-
-roi <- sf::st_read(con, db_table_admin) %>%
-  dplyr::filter(dep == admin_dep, level == admin_level)
-roi <- st_transform(roi, 4326)
+# roi vient de config.R (lu une seule fois là-bas, connexion temporaire —
+# voir config.R) — plus besoin de le recharger ici.
 
 # sf_use_s2(FALSE) requis : st_union/st_intersection échouent sur certaines géométries ROI
 # avec s2 activé (erreur "format non supporté"). Les messages "Spherical geometry switched
@@ -135,7 +133,7 @@ log_print("sf_use_s2 désactivé temporairement pour st_union/st_make_valid (com
 roi_info   <- sf::st_drop_geometry(roi) %>% dplyr::select(codgeo, libgeo)
 all_codgeo <- as.character(unique(roi$codgeo))
 
-cat("Création du grid (résolution", grid_res, "°)...\n")
+log_print(paste("Création du grid (résolution", grid_res, "°)..."))
 
 # coords : data.frame X/Y/site créé en mémoire par make_grid() (00_functions_formats.R).
 coords <- make_grid(geopolygon, roi_bbox, grid_res)
@@ -144,8 +142,8 @@ log_print(paste("Grid créé :", nrow(coords), "points (résolution", grid_res, 
 # Fonction utilitaire : crée les batches de coordonnées selon la durée demandée
 make_meteo_prep <- function(coords_df, n_days) {
   coords_per_batch <- max(1, min(100, floor(20000 / n_days)))
-  cat("Taille des batches :", coords_per_batch, "coords ×", n_days, "jours =",
-      coords_per_batch * n_days, "points/requête\n")
+  log_print(paste("Taille des batches :", coords_per_batch, "coords ×", n_days, "jours =",
+      coords_per_batch * n_days, "points/requête"))
   coords_df %>%
     group_by(row_number() %/% coords_per_batch) %>%
     group_map(~.x) %>%
@@ -156,7 +154,7 @@ make_meteo_prep <- function(coords_df, n_days) {
 # 2. Chargement de l'historique météo → BD (format grille brut)
 # ============================================================
 
-cat("Chargement de l'historique météo (", n_days_history, "jours)...\n")
+log_print(paste("Chargement de l'historique météo (", n_days_history, "jours)..."))
 
 start_date     <- Sys.Date() - n_days_history
 end_date       <- Sys.Date() - 1
@@ -207,7 +205,7 @@ if (phase_needed) {
 
   # ---- Chemin 1 : depuis le backup CSV (rapide, pas d'appel API) ----
   if (file.exists(path_backup)) {
-    cat("Backup CSV trouvé — chargement (format grille brut, sans agrégation)...\n")
+    log_print("Backup CSV trouvé — chargement (format grille brut, sans agrégation)...")
 
     # Lecture du backup (format brut par point de grille) — écrit TEL QUEL,
     # sans passer par aggregate_meteo_to_roi() (l'agrégation se fait côté
@@ -223,7 +221,7 @@ if (phase_needed) {
       dplyr::filter(date >= start_date)
 
     years <- sort(unique(format(backup$date, "%Y")))
-    cat("Années à traiter :", paste(years, collapse = ", "), "\n")
+    log_print(paste("Années à traiter :", paste(years, collapse = ", ")))
 
     for (yr in years) {
       yr_data <- backup %>% dplyr::filter(format(date, "%Y") == yr)
@@ -231,11 +229,11 @@ if (phase_needed) {
                    append = TRUE, row.names = FALSE)
       log_print(paste("Année", yr, ":", nrow(yr_data), "lignes écrites"))
     }
-    cat("✓ Historique chargé depuis backup CSV (format grille)\n")
+    log_print("✓ Historique chargé depuis backup CSV (format grille)")
 
   # ---- Chemin 2 : téléchargement API (fallback si pas de backup) ----
   } else {
-    cat("Backup CSV absent — téléchargement via l'API Open-Meteo par semestre...\n")
+    log_print("Backup CSV absent — téléchargement via l'API Open-Meteo par semestre...")
 
     # Découpe en périodes de 6 mois pour limiter la mémoire par lot
     period_starts <- seq(start_date, end_date, by = "6 months")
@@ -246,14 +244,14 @@ if (phase_needed) {
       p_end   <- period_ends[p]
       n_days_p <- as.numeric(p_end - p_start) + 1
 
-      cat("\n--- Période", as.character(p_start), "→", as.character(p_end),
-          "|", p, "/", length(period_starts), "---\n")
+      log_print(paste("--- Période", as.character(p_start), "→", as.character(p_end),
+          "|", p, "/", length(period_starts), "---"))
 
       meteo_prep_p <- make_meteo_prep(coords, n_days_p)
       raw_period   <- data.frame()
 
       for (i in seq_along(meteo_prep_p)) {
-        cat("Batch", i, "/", length(meteo_prep_p), "\n")
+        log_print(paste("Batch", i, "/", length(meteo_prep_p)))
         batch_df   <- dplyr::bind_rows(meteo_prep_p[[i]])
         th_res_api <- get_weather_history_batch(
           latitudes  = batch_df$Y,
@@ -284,12 +282,12 @@ if (phase_needed) {
                       ":", nrow(grid_data), "lignes écrites"))
       Sys.sleep(60)
     }
-    cat("✓ Historique téléchargé (format grille)\n")
+    log_print("✓ Historique téléchargé (format grille)")
   }
 }
 
 # ---- Vérification de la continuité de l'historique ----
-cat("Vérification des lacunes dans l'historique météo...\n")
+log_print("Vérification des lacunes dans l'historique météo...")
 dates_bd <- as.Date(dbGetQuery(con, sprintf(
   "SELECT DISTINCT date FROM %s WHERE is_forecast = FALSE ORDER BY date",
   db_table_meteo_grid
@@ -304,21 +302,20 @@ if (length(dates_bd) > 1) {
   } else {
     # Regrouper en périodes consécutives
     groupes <- split(dates_manquantes, cumsum(c(1, diff(dates_manquantes) > 1)))
-    cat("⚠ LACUNES DÉTECTÉES dans l'historique météo :\n")
+    log_print("⚠ LACUNES DÉTECTÉES dans l'historique météo :")
     for (g in groupes) {
       if (length(g) == 1) {
-        cat("  -", format(g), "\n")
+        log_print(paste("  -", format(g)))
       } else {
-        cat("  -", format(min(g)), "→", format(max(g)),
-            "(", length(g), "jours)\n")
+        log_print(paste("  -", format(min(g)), "→", format(max(g)),
+            "(", length(g), "jours)"))
       }
     }
-    cat("  Total :", length(dates_manquantes), "jours manquants\n")
     log_print(paste("⚠ Lacunes historique :", length(dates_manquantes),
                     "jours manquants — relancer l'initialisation ou compléter via l'API"))
   }
 } else {
-  cat("⚠ Historique vide ou insuffisant\n")
+  log_print("⚠ Historique vide ou insuffisant")
 }
 
 # ============================================================
@@ -342,12 +339,12 @@ if (dbExistsTable(con, db_table_meteo_grid)) {
 meteo_future <- data.frame()
 
 if (forecast_needed) {
-  cat("Téléchargement du forecast initial...\n")
+  log_print("Téléchargement du forecast initial...")
 
   meteo_prep_forecast <- make_meteo_prep(coords, n_days_forecast)
 
   for (i in seq_along(meteo_prep_forecast)) {
-    cat("Forecast — paquet", i, "sur", length(meteo_prep_forecast), "\n")
+    log_print(paste("Forecast — paquet", i, "sur", length(meteo_prep_forecast)))
 
     batch_df   <- dplyr::bind_rows(meteo_prep_forecast[[i]])
     th_res_api <- get_weather_forecast_batch(
@@ -369,8 +366,8 @@ if (forecast_needed) {
     Sys.sleep(60)
   }
 } else {
-  cat("✓ Forecast déjà à jour en BD pour les", n_days_forecast,
-      "jours à venir — téléchargement ignoré\n")
+  log_print(paste("✓ Forecast déjà à jour en BD pour les", n_days_forecast,
+      "jours à venir — téléchargement ignoré"))
 }
 
 if (nrow(meteo_future) > 0) {
@@ -389,8 +386,7 @@ log_print(paste("✓ Table météo BD :", db_table_meteo_grid, "|", n_total, "li
 # — même format que db_table_meteo_grid — donc utile comme fallback/re-siembra
 # (scripts/08_seed_meteo_grid.R). Il n'est pas régénéré automatiquement ici.
 if (!file.exists(path_backup) && dbExistsTable(con, db_table_meteo_grid)) {
-  cat("Pas de backup CSV — génération ignorée (à régénérer manuellement si besoin,",
-      "voir path_backup dans config.R).\n")
+  log_print("Pas de backup CSV — génération ignorée (à régénérer manuellement si besoin, voir path_backup dans config.R).")
 }
 
 # ============================================================
@@ -417,23 +413,29 @@ meteo_min_date <- as.Date(dbGetQuery(con, sprintf(
   "SELECT MIN(date) FROM %s", db_table_meteo_grid))[[1]])
 
 dbDisconnect(con)
+
+# Annonce des 2 runs qui suivent, consignée ici (dans le log de CE script)
+# avant de le fermer — logr ne supporte qu'un seul log actif à la fois, donc
+# ce log doit être fermé avant d'appeler 02_hebdomadaire.R, qui ouvre (et
+# ferme) le sien, une fois par run (logs/hebdomadaire_<date>.log).
+log_print("--- Run 1/2 à suivre : prédictions historiques (SHAP = NA) ---")
+log_print("--- Run 2/2 à suivre : prédictions récentes avec SHAP ---")
 log_print(paste("=== Fin du run initialisation météo —", Sys.time(), "==="))
 log_close()
 
 # ============================================================
 # 5. Génération des prédictions initiales
 # ============================================================
-# Deux runs de 02_hebdomadaire.R :
+# Deux runs de 02_hebdomadaire.R (chacun avec son propre log, voir ci-dessus) :
 #
 # Run 1 — historique complet, SHAP désactivé :
-#   init_lookback = nbre de jours depuis le début de meteo_ruiz_grid → tous les lundis
+#   init_lookback = nbre de jours depuis le début de db_table_meteo_grid → tous les lundis
 #   skip_shap = TRUE → SHAP = NA (trop lent sur des années de données)
 #   force_recompute = TRUE → ne pas sauter même si meteo_changed = FALSE
 #
-# Run 2 — semaines récentes avec SHAP :
+# Run 2 — prédictions récentes avec SHAP :
 #   fenêtre normale (n_days_forecast jours en arrière)
-#   SHAP calculé normalement → écrase les semaines récentes avec valeurs SHAP
-cat("--- Run 1/2 : prédictions historiques (SHAP = NA) ---\n")
+#   SHAP calculé normalement → écrase les prédictions récentes avec valeurs SHAP
 init_lookback  <- as.integer(Sys.Date() - meteo_min_date) + 1
 skip_shap      <- TRUE
 force_recompute <- TRUE
@@ -441,7 +443,6 @@ init_forecast_done <- TRUE
 source(here("scripts", "02_hebdomadaire.R"))
 rm(init_lookback, skip_shap, force_recompute, init_forecast_done)
 
-cat("--- Run 2/2 : prédictions récentes avec SHAP ---\n")
 force_recompute    <- TRUE
 init_forecast_done <- TRUE
 source(here("scripts", "02_hebdomadaire.R"))

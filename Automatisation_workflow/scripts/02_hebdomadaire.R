@@ -1,12 +1,16 @@
 # ============================================================
-# SCRIPT 2 — Pipeline hebdomadaire
-# À exécuter chaque semaine sur le serveur (cron job)
+# SCRIPT 2 — Pipeline de prédiction (remplacement forecast + calcul + publication)
+# À exécuter régulièrement (cron job) — indépendant de la fréquence réelle
+# d'exécution (voir section "Création des variables indépendantes" : la
+# fenêtre à prédire se recalcule depuis la dernière prédiction publiée,
+# quel que soit l'écart depuis la dernière exécution).
 # Prérequis : Script 1 (initialisation) déjà exécuté
 #
 # CE QUE FAIT CE CODE (dans l'ordre) :
 #   1. Met à jour la météo en BD (db_table_meteo_grid, format brut X/Y/date/TM/RR/UM) :
-#      remplace le forecast de la semaine passée par les vraies données historiques,
-#      télécharge le forecast de la semaine à venir. Écriture brute — aucune
+#      remplace le forecast déjà périmé par les vraies données historiques
+#      (depuis la dernière date réelle en BD jusqu'à hier), télécharge le
+#      forecast à venir (n_days_forecast jours). Écriture brute — aucune
 #      agrégation par commune à l'écriture.
 #   2. Lit uniquement les lag_max derniers jours de météo (format grille brut),
 #      puis AGRÈGE PAR COMMUNE ICI, À LA LECTURE, via aggregate_meteo_to_roi()
@@ -88,12 +92,11 @@ con <- dbConnect(
 dbExecute(con, "SET statement_timeout = 0")
 
 # ============================================================
-# Chargement du ROI et du grid
+# ROI (déjà chargé par config.R) et grid
 # ============================================================
 
-roi <- sf::st_read(con, db_table_admin) %>%
-  dplyr::filter(dep == admin_dep, level == admin_level)
-roi <- st_transform(roi, 4326)
+# roi vient de config.R (lu une seule fois là-bas, connexion temporaire —
+# voir config.R) — plus besoin de le recharger ici.
 
 # sf_use_s2(FALSE) requis : st_union/st_intersection échouent sur certaines géométries ROI
 # avec s2 activé (erreur "format non supporté"). Les messages "Spherical geometry switched
@@ -148,13 +151,13 @@ log_print(paste("Dernière date historique réelle :", if (is.na(derniere_date_r
                 "| dates à remplacer :", length(dates_a_remplacer)))
 
 if (length(dates_a_remplacer) > 0) {
-  cat("Remplacement forecast/trous -> historical pour", length(dates_a_remplacer), "dates (",
-      format(min(dates_a_remplacer)), "→", format(max(dates_a_remplacer)), ")\n")
+  log_print(paste("Remplacement forecast/trous -> historical pour", length(dates_a_remplacer), "dates (",
+      format(min(dates_a_remplacer)), "→", format(max(dates_a_remplacer)), ")"))
 
   meteo_updated <- data.frame()
 
   for (i in seq_along(meteo_prep)) {
-    cat("Mise à jour historical — paquet", i, "sur", length(meteo_prep), "\n")
+    log_print(paste("Mise à jour historical — paquet", i, "sur", length(meteo_prep)))
 
     batch_df   <- dplyr::bind_rows(meteo_prep[[i]])
     th_res_api <- get_weather_history_batch(
@@ -190,32 +193,32 @@ if (length(dates_a_remplacer) > 0) {
   ))
   dbWriteTable(con, db_table_meteo_grid, as.data.frame(grid_updated), append = TRUE, row.names = FALSE)
 
-  cat("✓ Remplacement historique écrit en BD (", nrow(grid_updated), "lignes)\n")
+  log_print(paste("✓ Remplacement historique écrit en BD (", nrow(grid_updated), "lignes)"))
 } else {
-  cat("✓ Historique déjà à jour jusqu'à hier — rien à remplacer\n")
+  log_print("✓ Historique déjà à jour jusqu'à hier — rien à remplacer")
 }
 
-# ---- Étape 2 : Télécharger la nouvelle semaine de forecast ----
+# ---- Étape 2 : Télécharger le forecast à venir ----
 
 # Si appelé depuis 01_initialisation.R, le forecast vient d'être téléchargé —
 # on saute la re-vérification pour éviter une double écriture en BD.
 if (exists("init_forecast_done") && isTRUE(init_forecast_done)) {
   forecast_needed <- FALSE
-  cat("✓ Forecast déjà téléchargé par l'initialisation — téléchargement ignoré\n")
+  log_print("✓ Forecast déjà téléchargé par l'initialisation — téléchargement ignoré")
 } else {
-  # Le forecast téléchargé la semaine dernière est périmé (modèle météo mis à
-  # jour chaque jour) — on re-télécharge systématiquement le forecast futur.
+  # Le forecast déjà en BD est périmé (modèle météo mis à jour chaque jour) —
+  # on re-télécharge systématiquement le forecast futur.
   forecast_needed <- TRUE
-  cat("Forecast futur à re-télécharger (données fraîches)\n")
+  log_print("Forecast futur à re-télécharger (données fraîches)")
 }
 
 meteo_future <- data.frame()
 
 if (forecast_needed) {
-  cat("Téléchargement du forecast...\n")
+  log_print("Téléchargement du forecast...")
 
   for (i in seq_along(meteo_prep)) {
-    cat("Forecast — paquet", i, "sur", length(meteo_prep), "\n")
+    log_print(paste("Forecast — paquet", i, "sur", length(meteo_prep)))
 
     batch_df   <- dplyr::bind_rows(meteo_prep[[i]])
     th_res_api <- get_weather_forecast_batch(
@@ -243,10 +246,10 @@ if (forecast_needed) {
 
   dbExecute(con, sprintf("DELETE FROM %s WHERE date >= '%s'", db_table_meteo_grid, Sys.Date()))
   dbWriteTable(con, db_table_meteo_grid, as.data.frame(grid_future), append = TRUE, row.names = FALSE)
-  cat("✓ Forecast écrit en BD (", nrow(grid_future), "lignes)\n")
+  log_print(paste("✓ Forecast écrit en BD (", nrow(grid_future), "lignes)"))
 } else {
-  cat("✓ Forecast déjà à jour en BD pour les", n_days_forecast,
-      "jours à venir — téléchargement ignoré\n")
+  log_print(paste("✓ Forecast déjà à jour en BD pour les", n_days_forecast,
+      "jours à venir — téléchargement ignoré"))
 }
 
 log_print(paste("Forecast nécessaire :", forecast_needed))
@@ -258,14 +261,14 @@ log_print(paste("Forecast nécessaire :", forecast_needed))
 # il se désynchronise donc naturellement de la BD au fil des runs
 # hebdomadaires. Ce test se contente de le signaler (log + console), il ne
 # corrige rien tout seul.
-cat("\n--- Test de fraîcheur : BD vs backup CSV ---\n")
+log_print("--- Test de fraîcheur : BD vs backup CSV ---")
 
 max_date_bd <- as.Date(dbGetQuery(con, sprintf(
   "SELECT MAX(date) FROM %s WHERE NOT is_forecast", db_table_meteo_grid
 ))[[1]])
 retard_bd <- as.integer(Sys.Date() - max_date_bd)
-cat("BD (", db_table_meteo_grid, ") — dernière date historique :", format(max_date_bd),
-    "(", retard_bd, "jour(s) avant aujourd'hui)\n")
+log_print(paste("BD (", db_table_meteo_grid, ") — dernière date historique :", format(max_date_bd),
+    "(", retard_bd, "jour(s) avant aujourd'hui)"))
 if (retard_bd > 7) {
   log_print(paste("⚠ BD météo en retard —", retard_bd, "jours sans donnée historique récente",
                   "— vérifier que le run hebdomadaire tourne bien régulièrement"))
@@ -276,8 +279,8 @@ if (file.exists(path_backup)) {
     as.Date(data.table::fread(path_backup, select = "date")$date), na.rm = TRUE
   ))
   ecart_backup <- as.integer(max_date_bd - max_date_backup)
-  cat("Backup CSV (", path_backup, ") — dernière date :", format(max_date_backup),
-      "| écart avec la BD :", ecart_backup, "jour(s)\n")
+  log_print(paste("Backup CSV (", path_backup, ") — dernière date :", format(max_date_backup),
+      "| écart avec la BD :", ecart_backup, "jour(s)"))
   if (ecart_backup > 30) {
     log_print(paste("⚠ Backup CSV désynchronisé —", ecart_backup, "jours de retard sur la BD",
                     "— envisager de le régénérer (re-source 01_initialisation.R, ou exporter",
@@ -285,7 +288,7 @@ if (file.exists(path_backup)) {
   }
 } else {
   max_date_backup <- NA
-  cat("⚠ Backup CSV introuvable (", path_backup, ") — pas de comparaison possible.\n")
+  log_print(paste("⚠ Backup CSV introuvable (", path_backup, ") — pas de comparaison possible."))
 }
 
 log_print(paste("Fraîcheur météo — BD :", format(max_date_bd),
@@ -319,7 +322,7 @@ log_print(paste("Fraîcheur météo — BD :", format(max_date_bd),
 #                           Run 1 publie jusqu'à l'horizon de forecast, donc
 #                           sans fenetre_fixe le Run 2 croirait n'avoir rien
 #                           à refaire et ne recalculerait jamais le SHAP réel
-#                           des semaines récentes.
+#                           des prédictions récentes.
 #   - fenetre_rattrapage : tout ce qui manque depuis la dernière prédiction
 #                          publiée dans db_layer — pour ne rien sauter si le
 #                          run a été espacé plus que d'habitude.
@@ -372,7 +375,7 @@ if (.mode_normal) {
 } else {
   ""
 }
-cat("Lecture de la météo depuis", format(.read_from), "depuis la BD (format grille)...\n")
+log_print(paste("Lecture de la météo depuis", format(.read_from), "depuis la BD (format grille)..."))
 
 # Lecture BRUTE (X, Y, date, TM, RR, UM, is_forecast) depuis
 # db_table_meteo_grid. aggregate_meteo_to_roi() reconstruit ensuite le
@@ -386,7 +389,7 @@ meteo_grid_brut$date <- as.Date(meteo_grid_brut$date)
 # doublons (X, Y, date) peuvent apparaître si la table a été écrite plusieurs fois)
 meteo_grid_brut <- meteo_grid_brut %>% dplyr::distinct(X, Y, date, .keep_all = TRUE)
 
-cat("Agrégation par commune (aggregate_meteo_to_roi) —", nrow(meteo_grid_brut), "lignes brutes...\n")
+log_print(paste("Agrégation par commune (aggregate_meteo_to_roi) —", nrow(meteo_grid_brut), "lignes brutes..."))
 meteo <- aggregate_meteo_to_roi(meteo_grid_brut, roi, grid_res) %>% as.data.table()
 # Dédupliquer (codgeo, date) après agrégation, avant les lags.
 meteo <- meteo %>% dplyr::distinct(codgeo, date, .keep_all = TRUE)
@@ -546,7 +549,7 @@ if (exists("skip_shap") && isTRUE(skip_shap)) {
   df_meteo_predictions <- df_meteo_predictions %>%
     dplyr::mutate(shap_TM = NA_real_, shap_UM = NA_real_, shap_RR = NA_real_,
                   shap_TM_abs = NA_real_, shap_UM_abs = NA_real_, shap_RR_abs = NA_real_)
-  cat("ℹ SHAP désactivé (chargement historique initial) — colonnes NA\n")
+  log_print("ℹ SHAP désactivé (chargement historique initial) — colonnes NA")
 } else {
 
 # shap_max_background : taille de l'échantillon background utilisé dans
@@ -680,7 +683,7 @@ if (!is.null(res_train$X_combined)) {
   # X_combined absent = 00_train_models.R n'a pas encore été relancé avec le nouveau code
   df_meteo_predictions <- df_meteo_predictions %>%
     dplyr::mutate(shap_TM_abs = NA_real_, shap_UM_abs = NA_real_, shap_RR_abs = NA_real_)
-  cat("⚠ res_train$X_combined absent — relancer 00_train_models.R pour activer SHAP absolu\n")
+  log_print("⚠ res_train$X_combined absent — relancer 00_train_models.R pour activer SHAP absolu")
 }
 
 } # fin du bloc else (SHAP calculé — pas de skip_shap)
@@ -825,7 +828,7 @@ if (all(shap_cols %in% colnames(df_meteo_predictions))) {
     left_join(shap_comm, by = c("codgeo", "date"))
 
 } else {
-  cat("⚠ Colonnes SHAP absentes — table identique à la table principale\n")
+  log_print("⚠ Colonnes SHAP absentes — table identique à la table principale")
   albopictus_predictions_shap <- albopictus_predictions
 }
 
@@ -870,8 +873,9 @@ if (dbExistsTable(con, db_layer) &&
   log_print(paste("✓ Colonne pred_presence_prob ajoutée à la table", db_layer))
 }
 
-# Supprimer uniquement les dates qu'on va écrire (évite les doublons si hebdo
-# tourne deux fois dans la même semaine, et conserve l'historique des semaines passées)
+# Supprimer uniquement les dates qu'on va écrire (évite les doublons si ce
+# script tourne plusieurs fois sur la même fenêtre de dates, et conserve
+# l'historique des dates déjà publiées)
 dates_a_ecrire <- unique(albopictus_predictions_shap$date)
 dates_sql      <- paste(paste0("'", dates_a_ecrire, "'"), collapse = ",")
 
@@ -905,8 +909,8 @@ log_print(paste("✓ Prédictions + SHAP publiées →", db_layer,
                 "| colonnes SHAP :", length(all_shap_cols)))
 
 } else {
-  cat("✓ Aucune nouvelle donnée météo — prédictions/SHAP non recalculés, table",
-      db_layer, "inchangée.\n  (Mettre force_recompute <- TRUE pour forcer.)\n")
+  log_print(paste("✓ Aucune nouvelle donnée météo — prédictions/SHAP non recalculés, table",
+      db_layer, "inchangée. (Mettre force_recompute <- TRUE pour forcer.)"))
 }
 
 # Rafraîchit mean_10y/mean_2y à chaque exécution (même si le bloc ci-dessus
