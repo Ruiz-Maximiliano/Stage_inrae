@@ -766,6 +766,7 @@ make_grid <- function(geopolygon, roi_bbox = NULL, grid_res = 0.05) {
 #' @param roi      Objet sf — communes du ROI                                    [ENTRÉE]
 #' @param grid_res Résolution du grid en degrés (défaut 0.05)                   [ENTRÉE]
 #' @return data.frame (codgeo, date, TM, RR, UM) — une ligne par commune x date [SORTIE]
+#' 
 aggregate_meteo_to_roi <- function(raw_df, roi, grid_res = 0.05) {
   # fix (bug trouvé en pratique avec debug_missing_communes.R — Pérols et 21 autres
   # communes du ROI disparaissaient silencieusement de meteo_ruiz) : round() en R

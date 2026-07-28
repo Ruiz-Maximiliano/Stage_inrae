@@ -95,16 +95,10 @@ dbExecute(con, "SET statement_timeout = 0")
 # ============================================================
 # ROI (déjà chargé par config.R) + grid
 # ============================================================
-# roi vient de config.R (lu une seule fois là-bas, connexion temporaire —
-# voir config.R) — plus besoin de le recharger ici.
+# roi, geopolygon, roi_info, all_codgeo viennent tous de config.R (calculés
+# une seule fois là-bas — voir config.R) — plus besoin de les recalculer ici.
 
-sf::sf_use_s2(FALSE)
-roi <- st_make_valid(roi)
-geopolygon <- st_union(roi)
-sf::sf_use_s2(TRUE)
-
-roi_info <- sf::st_drop_geometry(roi) %>% dplyr::select(codgeo, libgeo)
-coords   <- make_grid(geopolygon, roi_bbox, grid_res)
+coords <- make_grid(geopolygon, roi_bbox, grid_res)
 
 meteo_prep <- coords %>%
   group_by(row_number() %/% 20) %>%

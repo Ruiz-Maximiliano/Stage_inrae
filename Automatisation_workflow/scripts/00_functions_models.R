@@ -1,12 +1,19 @@
 # ============================================================
 # 00_functions_models.R — Fonctions de modèles et prédiction
 #
+# compute_lime_explanation()/add_lime_explanations() (basées sur le lime.R de
+# Paul) remplacent l'usage de compute_shap()/.shapley_exact() dans
+# 02_hebdomadaire.R — ces deux dernières restent définies ici (encore
+# utilisées par d'autres scripts, ex. backfills SHAP existants) mais ne sont
+# plus appelées par le pipeline hebdomadaire normal.
+#
 # CE QUE FAIT CE CODE :
 #   Définit les fonctions liées aux modèles de présence/abondance : calcul
-#   SHAP (exact et via treeshap), prédiction combinée two-part avec
-#   propagation d'incertitude, et les utilitaires d'affichage de progression
-#   utilisés par ces deux calculs (potentiellement longs). Ce fichier ne fait
-#   RIEN tout seul — il ne fait que DÉFINIR des fonctions, appelées depuis
+#   SHAP (exact et via treeshap), calcul LIME (explications locales via le
+#   package lime), prédiction combinée two-part avec propagation
+#   d'incertitude, et les utilitaires d'affichage de progression utilisés par
+#   ces calculs (potentiellement longs). Ce fichier ne fait RIEN tout seul —
+#   il ne fait que DÉFINIR des fonctions, appelées depuis
 #   00_train_models.R, 02_hebdomadaire.R,
 #   07_seasonal_forecast_predictions.R, etc. après un
 #   source(here("scripts", "00_functions_models.R")).
@@ -16,8 +23,9 @@
 #   argument (voir le tag [ENTRÉE] dans la documentation de chaque fonction).
 #
 # PARAMÈTRES CRÉÉS PAR CE CODE :
-#   compute_shap(), predict_two_part_uncertainty(), .shapley_exact(),
-#   .format_duree(), .log_progression() (internes).
+#   compute_shap(), compute_lime_explanation(), add_lime_explanations(),
+#   predict_two_part_uncertainty(), .shapley_exact(), .format_duree(),
+#   .log_progression() (internes).
 # ============================================================
 
 #' Formate une durée en secondes en texte lisible (ex. "1 h 12 min", "45 s")
@@ -393,4 +401,136 @@ predict_two_part_uncertainty <- function(newdata, mod_presence, rf_abundance_q,
     dplyr::mutate(row_id = seq_len(dplyr::n())) %>%
     dplyr::left_join(sim_res, by = "row_id") %>%
     dplyr::mutate(pred_thresholded = ifelse(pred_presence_prob > 0.5, pred_abundance_q50, 0))
+}
+
+#' Calcule les explications LIME d'un sous-ensemble de prédictions pour UN modèle
+#'
+#' @description
+#' Reprend la logique de lime.R (Paul) : découpe df en lots (batch_size, pour
+#' borner la mémoire/parallélisme via furrr, comme .shapley_exact() le fait
+#' pour SHAP), appelle lime::explain() sur chaque lot, puis reconstruit un
+#' data.frame large (une colonne par prédicteur) joint sur (codgeo, date).
+#'
+#' Le join id <-> explication se fait par la colonne "case" de lime::explain()
+#' (numérotée 1..n À L'INTÉRIEUR DE CHAQUE LOT, pas globalement) — d'où le
+#' découpage en lots IDENTIQUE (même ordre de lignes) pour les identifiants
+#' (codgeo, date) et pour les prédicteurs, tous deux tirés du même df d'entrée.
+#'
+#' @param df           data.frame déjà filtré pour CE modèle (ex. pred_presence_prob
+#'                      < 0.5 pour le modèle de présence) — doit contenir codgeo,
+#'                      date, et les colonnes de `predictors`                [ENTRÉE]
+#' @param explainer     Objet lime::lime() construit sur les données d'entraînement [ENTRÉE]
+#' @param predictors    Vecteur des noms de prédicteurs de CE modèle              [ENTRÉE]
+#' @param lime_col_map  Vecteur nommé prédicteur -> colonne de sortie, ex.
+#'                      c(TM_0_8 = "lime_TM", UM_5_11 = "lime_UM")               [ENTRÉE]
+#' @param label         Nom de la classe à expliquer (modèles de classification
+#'                      seulement, ex. "Presence") — NULL pour la régression     [ENTRÉE]
+#' @param n_permutations,n_features,feature_select,dist_fun,kernel_width
+#'                      Transmis tels quels à lime::explain()                    [ENTRÉE]
+#' @param batch_size    Taille des lots (mémoire/parallélisme furrr, défaut 1000) [ENTRÉE]
+#' @return data.frame codgeo, date, lime_TM, lime_UM, lime_RR (NA pour les
+#'         colonnes absentes de lime_col_map — modèle qui n'utilise pas cette
+#'         variable), ou NULL si df est vide                                    [SORTIE]
+compute_lime_explanation <- function(df, explainer, predictors, lime_col_map,
+                                      label = NULL, n_permutations = 200,
+                                      n_features = 6, feature_select = "highest_weights",
+                                      dist_fun = "gower", kernel_width = NULL,
+                                      batch_size = 1000) {
+
+  if (nrow(df) == 0) return(NULL)
+
+  x_batches <- df %>%
+    dplyr::select(dplyr::all_of(predictors)) %>%
+    dplyr::group_by(dplyr::row_number() %/% batch_size) %>%
+    dplyr::group_map(~.x)
+
+  id_batches <- df %>%
+    dplyr::select(codgeo, date) %>%
+    dplyr::group_by(dplyr::row_number() %/% batch_size) %>%
+    dplyr::group_map(~ dplyr::mutate(.x, case = as.character(seq_len(nrow(.x)))))
+
+  explain_args <- list(
+    explainer      = explainer,
+    n_permutations = n_permutations,
+    dist_fun       = dist_fun,
+    kernel_width   = kernel_width,
+    n_features     = n_features,
+    feature_select = feature_select
+  )
+  if (!is.null(label)) explain_args$labels <- label
+
+  explanations <- furrr::future_map(
+    x_batches,
+    ~ do.call(lime::explain, c(list(x = .x), explain_args)),
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+
+  result <- purrr::map2_dfr(id_batches, explanations, ~ dplyr::left_join(.x, .y, by = "case")) %>%
+    dplyr::select(-c(case:model_prediction, feature_value, feature_desc, data, prediction)) %>%
+    tidyr::pivot_wider(names_from = feature, values_from = feature_weight)
+
+  # Renomme selon lime_col_map (ex. TM_0_8 -> lime_TM), et garantit les 3
+  # colonnes lime_TM/lime_UM/lime_RR même quand un prédicteur n'existe pas
+  # pour ce modèle (ex. lime_RR = NA pour le modèle de présence, qui n'utilise pas RR).
+  # fix : dplyr::rename(!!!x) attend names(x) = NOUVEAU nom, values(x) = ANCIEN nom
+  # (c'est rename(nouveau = ancien)) — l'inverse de lime_col_map (ancien -> nouveau,
+  # plus lisible pour l'appelant) — on inverse donc le vecteur ici, juste pour l'appel.
+  result <- result %>% dplyr::rename(!!!stats::setNames(names(lime_col_map), lime_col_map))
+  for (col in setdiff(c("lime_TM", "lime_UM", "lime_RR"), names(result))) {
+    result[[col]] <- NA_real_
+  }
+  result %>% dplyr::select(codgeo, date, lime_TM, lime_UM, lime_RR)
+}
+
+#' Calcule les explications LIME pour les 2 modèles (présence + abondance) et
+#' les joint à df_meteo_predictions
+#'
+#' @description
+#' Équivalent LIME du bloc SHAP de 02_hebdomadaire.R : chaque ligne est
+#' expliquée par UN SEUL des deux modèles selon le seuil pred_presence_prob
+#' (comme lime.R de Paul) — contrairement au SHAP spatial, qui expliquait un
+#' modèle combiné unique, LIME explique séparément le modèle qui a
+#' effectivement produit la prédiction affichée pour cette ligne :
+#'   - pred_presence_prob <  0.5 -> expliquée par le modèle de PRÉSENCE
+#'     (TM_0_8, UM_5_11 -> lime_TM, lime_UM ; lime_RR = NA)
+#'   - pred_presence_prob >= 0.5 -> expliquée par le modèle d'ABONDANCE
+#'     (TM_0_4, UM_0_11, RR_1_5 -> lime_TM, lime_UM, lime_RR)
+#'
+#' @param df_meteo_predictions data.frame avec codgeo, date, pred_presence_prob,
+#'                              et les colonnes de predictors_presence/abundance [ENTRÉE]
+#' @param explainer_presence,explainer_abundance  Objets lime::lime() (un par modèle) [ENTRÉE]
+#' @param predictors_presence,predictors_abundance  Vecteurs de noms de prédicteurs [ENTRÉE]
+#' @param n_permutations,n_features,batch_size  Transmis à compute_lime_explanation() [ENTRÉE]
+#' @return df_meteo_predictions enrichi des colonnes lime_TM, lime_UM, lime_RR [SORTIE]
+add_lime_explanations <- function(df_meteo_predictions,
+                                   explainer_presence, explainer_abundance,
+                                   predictors_presence, predictors_abundance,
+                                   n_permutations = 200, n_features = 6,
+                                   batch_size = 1000) {
+
+  explanation_presence <- compute_lime_explanation(
+    df_meteo_predictions %>% dplyr::filter(pred_presence_prob < 0.5),
+    explainer     = explainer_presence,
+    predictors    = predictors_presence,
+    lime_col_map  = c(TM_0_8 = "lime_TM", UM_5_11 = "lime_UM"),
+    label          = "Presence",
+    n_permutations = n_permutations,
+    n_features     = n_features,
+    batch_size     = batch_size
+  )
+
+  explanation_abundance <- compute_lime_explanation(
+    df_meteo_predictions %>% dplyr::filter(pred_presence_prob >= 0.5),
+    explainer     = explainer_abundance,
+    predictors    = predictors_abundance,
+    lime_col_map  = c(TM_0_4 = "lime_TM", UM_0_11 = "lime_UM", RR_1_5 = "lime_RR"),
+    label          = NULL,
+    n_permutations = n_permutations,
+    n_features     = n_features,
+    batch_size     = batch_size
+  )
+
+  explanation_lime <- dplyr::bind_rows(explanation_presence, explanation_abundance)
+
+  dplyr::left_join(df_meteo_predictions, explanation_lime, by = c("codgeo", "date"))
 }

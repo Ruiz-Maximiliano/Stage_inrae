@@ -35,11 +35,11 @@
 #   db_table_meteo_grid. Rien à fournir directement dans CE script.
 #
 # PARAMÈTRES CRÉÉS PAR CE CODE :
-#   geopolygon, coords — voir le commentaire au-dessus de chaque variable.
+#   coords — voir le commentaire au-dessus de la variable.
 #
 # PARAMÈTRES PRIS D'AUTRES SCRIPTS :
-#   - config.R : tous les paramètres listés ci-dessus, plus roi (objet sf,
-#     déjà chargé et transformé en EPSG:4326 dans config.R).
+#   - config.R : tous les paramètres listés ci-dessus, plus roi, geopolygon,
+#     roi_info, all_codgeo (déjà chargés/calculés dans config.R).
 #   - 00_functions_api.R : get_weather_history_batch(), get_weather_forecast_batch().
 #   - 00_functions_formats.R : make_grid(), ensure_is_forecast_column().
 # ============================================================
@@ -118,20 +118,8 @@ ensure_is_forecast_column(con, db_table_meteo_grid)
 # 1. ROI (déjà chargé par config.R) et création du grid
 # ============================================================
 
-# roi vient de config.R (lu une seule fois là-bas, connexion temporaire —
-# voir config.R) — plus besoin de le recharger ici.
-
-# sf_use_s2(FALSE) requis : st_union/st_intersection échouent sur certaines géométries ROI
-# avec s2 activé (erreur "format non supporté"). Les messages "Spherical geometry switched
-# off/on" et "assumes planar" sont normaux et attendus ici.
-sf::sf_use_s2(FALSE)
-geopolygon <- st_union(st_make_valid(roi))
-sf::sf_use_s2(TRUE)
-log_print("sf_use_s2 désactivé temporairement pour st_union/st_make_valid (comportement attendu)")
-
-# roi_info : data.frame codgeo/libgeo sans géométrie, pour les jointures
-roi_info   <- sf::st_drop_geometry(roi) %>% dplyr::select(codgeo, libgeo)
-all_codgeo <- as.character(unique(roi$codgeo))
+# roi, geopolygon, roi_info, all_codgeo viennent tous de config.R (calculés
+# une seule fois là-bas — voir config.R) — plus besoin de les recalculer ici.
 
 log_print(paste("Création du grid (résolution", grid_res, "°)..."))
 

@@ -6,6 +6,10 @@
 # quel que soit l'écart depuis la dernière exécution).
 # Prérequis : Script 1 (initialisation) déjà exécuté
 #
+# SHAP remplacé par LIME (demande Paul, voir scripts/lime.R) — colonnes
+# lime_TM/lime_UM/lime_RR au lieu de shap_TM/UM/RR/*_abs. Testé dans
+# pipeline_test/ avant d'être reporté ici.
+#
 # CE QUE FAIT CE CODE (dans l'ordre) :
 #   1. Met à jour la météo en BD (db_table_meteo_grid, format brut X/Y/date/TM/RR/UM) :
 #      remplace le forecast déjà périmé par les vraies données historiques
@@ -17,8 +21,8 @@
 #      — au lieu de toute la table — et construit les variables retardées
 #      (lags TM/RR/UM) sur le résultat agrégé.
 #   3. Charge les modèles entraînés et génère les prédictions two-part.
-#   4. Calcule le SHAP pour les 4 modèles.
-#   5. Publie 1 table en BD (db_layer) avec prédictions + SHAP.
+#   4. Calcule les explications LIME (lime_TM/lime_UM/lime_RR).
+#   5. Publie 1 table en BD (db_layer) avec prédictions + LIME.
 #   6. Rafraîchit les vues matérielles mean_10y/mean_2y (comparatif page web).
 #
 # NOTE : db_table_meteo (meteo_ruiz, par commune) n'est plus lue ni écrite par
@@ -49,7 +53,7 @@ library(RPostgres)
 library(caret)
 library(ranger)
 library(CAST)
-library(treeshap)
+library(lime)
 library(logr)
 
 source(here("scripts", "00_functions_api.R"))
@@ -84,7 +88,7 @@ con <- dbConnect(
   user     = db_user,
   password = db_password,
   # Keepalives TCP : envoie un paquet toutes les 60 s pour éviter que la connexion
-  # soit coupée par le serveur pendant les longs calculs R (init historique, SHAP...)
+  # soit coupée par le serveur pendant les longs calculs R (init historique, LIME...)
   keepalives      = 1L,
   keepalives_idle = 60L
 )
@@ -95,21 +99,8 @@ dbExecute(con, "SET statement_timeout = 0")
 # ROI (déjà chargé par config.R) et grid
 # ============================================================
 
-# roi vient de config.R (lu une seule fois là-bas, connexion temporaire —
-# voir config.R) — plus besoin de le recharger ici.
-
-# sf_use_s2(FALSE) requis : st_union/st_intersection échouent sur certaines géométries ROI
-# avec s2 activé (erreur "format non supporté"). Les messages "Spherical geometry switched
-# off/on" et "assumes planar" sont normaux et attendus ici.
-sf::sf_use_s2(FALSE)
-roi <- st_make_valid(roi)
-geopolygon <- st_union(roi)
-sf::sf_use_s2(TRUE)
-log_print("sf_use_s2 désactivé temporairement pour st_union/st_make_valid (comportement attendu)")
-
-# roi_info : codgeo/libgeo sans géométrie — pour les jointures sur les tables publiées
-roi_info   <- sf::st_drop_geometry(roi) %>% dplyr::select(codgeo, libgeo)
-all_codgeo <- as.character(unique(roi$codgeo))
+# roi, geopolygon, roi_info, all_codgeo viennent tous de config.R (calculés
+# une seule fois là-bas — voir config.R) — plus besoin de les recalculer ici.
 
 # coords : grid de points météo (toujours nécessaire pour télécharger les données brutes)
 coords <- make_grid(geopolygon, roi_bbox, grid_res)
@@ -314,7 +305,9 @@ log_print(paste("Fraîcheur météo — BD :", format(max_date_bd),
 
 # .mode_normal : TRUE seulement pour le run hebdomadaire "normal" (ni
 # backfill par tranches, ni Run 1 historique de 01_initialisation.R). Dans ce
-# mode, .fenetre_a_predire est l'UNION de deux fenêtres :
+# mode, .fenetre_a_predire est l'UNION de deux fenêtres JOURNALIÈRES (pas
+# encore filtrées par jour de semaine — le filtre weekday == 1 est appliqué
+# plus bas, sur meteo2, comme pour les 2 autres modes) :
 #   - fenetre_fixe       : toujours [Sys.Date() - n_days_forecast, Sys.Date() +
 #                           n_days_forecast] — TOUJOURS incluse. Nécessaire
 #                           pour le Run 2 de 01_initialisation.R (SHAP réel)
@@ -349,7 +342,7 @@ if (.mode_normal) {
 
   log_print(paste("Dernière prédiction publiée :", if (is.na(derniere_prediction)) "aucune" else format(derniere_prediction),
                   "| jours de rattrapage :", length(fenetre_rattrapage),
-                  "| jours à prédire (total) :", length(.fenetre_a_predire)))
+                  "| jours candidats (avant filtre lundi) :", length(.fenetre_a_predire)))
 }
 
 # Optimisation : lire seulement les lag_max derniers jours au lieu de toute la table.
@@ -400,13 +393,16 @@ meteo <- meteo %>% dplyr::distinct(codgeo, date, .keep_all = TRUE)
 # valeurs de forecast de l'époque. na.omit() en aval élimine automatiquement les
 # dates trop anciennes dont les lags dépassent la fenêtre lue (lag_max jours).
 #
-# backfill/init_lookback restent par LUNDIS uniquement (weekday == 1). Le
-# mode normal utilise .fenetre_a_predire (calculée plus haut — tous les jours
-# manquants depuis la dernière prédiction publiée), sans restriction de jour
-# de semaine.
+# Les 3 modes restent TOUJOURS par LUNDIS uniquement (weekday == 1) — le modèle
+# est entraîné sur des semaines calendaires lundi-dimanche, une prédiction par
+# jour n'aurait pas de sens. .fenetre_a_predire (mode normal) peut contenir des
+# jours de semaine quelconques (c'est une plage journalière large — voir plus
+# haut), mais seuls les lundis qu'elle contient donnent lieu à une prédiction ;
+# les autres jours de la fenêtre (ex. le reliquat d'une semaine incomplète si
+# on tombe un mercredi) sont ignorés ici, pas téléchargés/publiés en trop.
 #
 # group_by(codgeo, date) (plutôt que group_by(codgeo, year, week)) reste
-# correct dans TOUS les cas (1 ou plusieurs dates par semaine par commune).
+# correct dans TOUS les cas (1 ou plusieurs lundis par commune).
 meteo2 <- meteo %>%
   dplyr::select(codgeo, date) %>%
   mutate(weekday = wday(date)) %>%
@@ -418,7 +414,7 @@ meteo2 <- meteo %>%
     } else if (exists("init_lookback")) {
       dplyr::filter(., weekday == 1, date >= Sys.Date() - init_lookback)
     } else {
-      dplyr::filter(., date %in% .fenetre_a_predire)
+      dplyr::filter(., weekday == 1, date %in% .fenetre_a_predire)
     }
   } %>%
   slice(rep(1:n(), each = lag_max)) %>%
@@ -482,7 +478,8 @@ if (!skip_recompute) {
 
 res_presence  <- readRDS(file.path(path_models, "res_presence_LOSO_probabilistic.rds"))
 res_abundance <- readRDS(file.path(path_models, "res_abundance_LOSO_quantile_rf.rds"))
-res_train     <- readRDS(file.path(path_models, "res_training_data.rds"))
+# res_training_data.rds (res_train, background SHAP absolu) n'est plus lu ici —
+# n'était utilisé que par le bloc SHAP absolu, retiré (SHAP -> LIME, demande Paul).
 
 mod_presence   <- res_presence$model
 rf_abundance_q <- res_abundance$model_quantile
@@ -490,6 +487,22 @@ mod_abundance_cv <- res_abundance$model_cv
 
 predictors_presence  <- c("TM_0_8", "UM_5_11")
 predictors_abundance <- c("TM_0_4", "UM_0_11", "RR_1_5")
+
+# explainer_presence/explainer_abundance : utilisés par add_lime_explanations()
+# (00_functions_models.R) plus bas. Construits sur les données D'ENTRAÎNEMENT
+# (res_*$df_mod, sauvegardées par 00_train_models.R) — LIME a besoin de cette
+# distribution pour discrétiser chaque prédicteur en n_bins (lime::lime()).
+train_data_presence  <- res_presence$df_mod
+train_data_abundance <- res_abundance$df_mod
+
+explainer_presence <- lime::lime(
+  train_data_presence %>% dplyr::select(dplyr::all_of(predictors_presence)),
+  mod_presence, n_bins = 8
+)
+explainer_abundance <- lime::lime(
+  train_data_abundance %>% dplyr::select(dplyr::all_of(predictors_abundance)),
+  rf_abundance_q, n_bins = 8
+)
 
 
 ######################################################
@@ -508,185 +521,48 @@ df_meteo_predictions <- predict_two_part_uncertainty(
 
 
 ######################################################
-######### Calcul SHAP exact du modèle combiné → 3 colonnes
+######### Calcul LIME 
 ######################################################
 
-# CONTEXTE — pourquoi un calcul exact plutôt que la règle du produit :
-#
-#   Le modèle combiné est le produit de deux modèles distincts :
-#     f(x) = p(TM_0_8, UM_5_11)  ×  exp(a_log(TM_0_4, UM_0_11, RR_1_5))
-#   où p = P(présence) et exp(a_log) = abondance médiane en échelle originale.
-#
-#   La règle du produit (shap_combined = shap_pres × pred_abundance, etc.)
-#   fait dominer artificiellement les variables de PRÉSENCE en haute
-#   abondance, à cause de l'asymétrie des multiplicateurs — pas un signal
-#   biologique réel.
-#
-# SOLUTION — Shapley exact sur f(x) traité comme une fonction UNIQUE de 5 variables :
-#   On énumère les 2^5 = 32 coalitions possibles de {TM_0_8, UM_5_11, TM_0_4, UM_0_11, RR_1_5}
-#   et on applique la définition exacte de Shapley :
-#
-#     φ_j = Σ_{S ⊆ {1..5}\{j}} [|S|!(4−|S|)! / 5!] × [v(S∪{j}) − v(S)]
-#
-#   où v(S) = E_bg[f(x) | variables de S fixées à leur valeur observée,
-#                          autres variables tirées du background]
-#
-#   Même méthode que .shapley_exact() (00_functions_models.R) utilisée pour
-#   le modèle de présence seul (2^2 = 4 coalitions) — appliquée ici sur les
-#   5 prédicteurs combinés.
-#
-# SORTIE — 3 colonnes (une par type de variable météo) : on somme les
-#   contributions des lags de présence ET d'abondance pour le même type de
-#   variable, car ils représentent le même signal physique à différentes
-#   échelles temporelles :
-#     shap_TM = φ(TM_0_8) + φ(TM_0_4)    # temp. lags 0-8 sem. (présence) + 0-4 sem. (abondance)
-#     shap_UM = φ(UM_5_11) + φ(UM_0_11)  # humidité lags 5-11 sem. + 0-11 sem.
-#     shap_RR = φ(RR_1_5)                 # pluie lags 1-5 sem. (abondance uniquement)
+# Contrairement au SHAP spatial qu'il remplace (un modèle combiné unique, une
+# seule explication par ligne), LIME explique séparément le modèle qui a
+# effectivement produit la prédiction affichée pour cette ligne, selon le
+# seuil pred_presence_prob (même logique que lime.R de Paul) :
+#   - pred_presence_prob <  0.5 -> expliquée par le modèle de PRÉSENCE
+#     (TM_0_8, UM_5_11 -> lime_TM, lime_UM ; lime_RR = NA, la présence
+#     n'utilise pas RR)
+#   - pred_presence_prob >= 0.5 -> expliquée par le modèle d'ABONDANCE
+#     (TM_0_4, UM_0_11, RR_1_5 -> lime_TM, lime_UM, lime_RR)
+# add_lime_explanations() (00_functions_models.R) fait ce partitionnement et
+# renvoie les 3 colonnes lime_TM/lime_UM/lime_RR jointes sur (codgeo, date).
 
-# skip_shap : défini par 01_initialisation.R lors du run historique complet pour éviter
-# de lancer SHAP sur des milliers de semaines (trop lent). En run normal, non défini → SHAP calculé.
+# skip_shap : nom historique (défini par 01_initialisation.R lors du run
+# historique complet), réutilisé tel quel pour désactiver aussi LIME sur des
+# milliers de semaines (trop lent). En run normal, non défini → LIME calculé.
 if (exists("skip_shap") && isTRUE(skip_shap)) {
   df_meteo_predictions <- df_meteo_predictions %>%
-    dplyr::mutate(shap_TM = NA_real_, shap_UM = NA_real_, shap_RR = NA_real_,
-                  shap_TM_abs = NA_real_, shap_UM_abs = NA_real_, shap_RR_abs = NA_real_)
-  log_print("ℹ SHAP désactivé (chargement historique initial) — colonnes NA")
+    dplyr::mutate(lime_TM = NA_real_, lime_UM = NA_real_, lime_RR = NA_real_)
+  log_print("ℹ LIME désactivé (chargement historique initial) — colonnes NA")
 } else {
 
-# shap_max_background : taille de l'échantillon background utilisé dans
-# .shapley_exact() (paramètre max_background) — le coût de tout le calcul
-# SHAP (32 coalitions × 2 backgrounds × 2 predict()) est linéaire en cette
-# valeur. Défaut 50 (comportement du run hebdomadaire normal). Peut être
-# réduit (ex. 20) depuis un script appelant (05_backfill_shap.R) pour
-# accélérer un backfill sur beaucoup de lignes, au prix d'une estimation
-# background un peu plus bruitée.
-if (!exists("shap_max_background")) shap_max_background <- 50
+  # lime_n_permutations/lime_n_features/lime_batch_size : mêmes valeurs par
+  
+  if (!exists("lime_n_permutations")) lime_n_permutations <- 200
+  if (!exists("lime_n_features"))     lime_n_features     <- 6
+  if (!exists("lime_batch_size"))     lime_batch_size     <- 1000
 
-# shap_batch_size borne le nombre de lignes à expliquer traitées EN UNE FOIS
-# par .shapley_exact() (00_functions_models.R) — évite de dépasser la limite
-# mémoire par vecteur de R sur un backfill de plusieurs dizaines de milliers
-# de lignes. Défaut 2000 (comportement du run hebdomadaire normal, où n est
-# de toute façon petit — quelques centaines de lignes).
-if (!exists("shap_batch_size")) shap_batch_size <- 2000
-
-all_predictors <- c(predictors_presence, predictors_abundance)
-# = c("TM_0_8", "UM_5_11", "TM_0_4", "UM_0_11", "RR_1_5")
-
-X_combined <- as.data.frame(df_meteo_predictions[, all_predictors])
-
-# Encapsulation des deux modèles dans une liste — pred_wrapper reçoit cet objet
-combined_model_obj <- list(
-  mod_presence         = mod_presence,
-  rf_abundance_q       = rf_abundance_q,
-  predictors_presence  = predictors_presence,
-  predictors_abundance = predictors_abundance
-)
-
-# pred_wrapper : implémente f(x) = p(x_pres) × exp(a_log_q50(x_abund))
-# exp() pour revenir de l'échelle log (dans laquelle le modèle est entraîné) à l'originale
-pred_wrapper_combined <- function(object, newdata) {
-  X_pres  <- newdata[, object$predictors_presence,  drop = FALSE]
-  X_abund <- newdata[, object$predictors_abundance, drop = FALSE]
-  p       <- predict(object$mod_presence, newdata = X_pres, type = "prob")$Presence
-  a_log   <- predict(object$rf_abundance_q, data = X_abund,
-                     type = "quantiles", quantiles = 0.5)$predictions[, 1]
-  p * exp(a_log)
-}
-
-# Background = données courantes de prédiction (distribution marginale des 5 prédicteurs
-# sur toutes les communes et semaines du forecast — référence raisonnable en l'absence
-# du jeu d'entraînement complet avec les 5 prédicteurs combinés)
-shap_exact <- tryCatch(
-  .shapley_exact(
-    model          = combined_model_obj,
-    X_df           = X_combined,
-    background     = X_combined,
-    feature_names  = all_predictors,
-    pred_wrapper   = pred_wrapper_combined,
-    max_background = shap_max_background,  # lignes background × 32 coalitions × n_obs prédictions
-    batch_size     = shap_batch_size       # borne mémoire — voir 00_functions_models.R
-  ),
-  error = function(e) {
-    msg <- paste("SHAP combiné exact (spatial) : calcul échoué —", conditionMessage(e))
-    warning(msg, call. = FALSE)
-    log_print(msg)
-    NULL
-  }
-)
-
-# Agrégation en 3 colonnes (même signal physique, lags différents → on somme)
-if (!is.null(shap_exact)) {
-  df_meteo_predictions <- df_meteo_predictions %>%
-    dplyr::mutate(
-      shap_TM = shap_exact[["TM_0_8"]] + shap_exact[["TM_0_4"]],
-      shap_UM = shap_exact[["UM_5_11"]] + shap_exact[["UM_0_11"]],
-      shap_RR = shap_exact[["RR_1_5"]]
-    )
-  log_print("✓ SHAP spatial calculé (3 colonnes : shap_TM, shap_UM, shap_RR)")
-} else {
-  df_meteo_predictions <- df_meteo_predictions %>%
-    dplyr::mutate(shap_TM = NA_real_, shap_UM = NA_real_, shap_RR = NA_real_)
-  log_print("⚠ SHAP spatial non disponible — colonnes NA")
-}
-
-
-######################################################
-######### SHAP absolu — background = données d'entraînement
-######################################################
-
-# DIFFÉRENCE AVEC LE SHAP SPATIAL CI-DESSUS :
-#
-#   shap_TM / shap_UM / shap_RR (background = communes du forecast courant) :
-#     → mesurent la VARIATION INTER-COMMUNES cette semaine
-#     → une variable est "dominante" si elle différencie les communes entre elles
-#     → en été quand toutes les communes ont ~même TM, shap_TM ≈ 0 même si TM
-#        est biologiquement important
-#
-#   shap_TM_abs / shap_UM_abs / shap_RR_abs (background = données d'entraînement) :
-#     → mesurent l'ÉCART PAR RAPPORT À LA NORMALE HISTORIQUE
-#     → une variable est "dominante" si elle s'éloigne de ce qu'a vu le modèle
-#        lors de son entraînement, indépendamment des autres communes
-#     → nécessite res_train$X_combined (disponible si 00_train_models.R a été relancé)
-
-if (!is.null(res_train$X_combined)) {
-  shap_exact_abs <- tryCatch(
-    .shapley_exact(
-      model          = combined_model_obj,
-      X_df           = X_combined,
-      background     = res_train$X_combined,
-      feature_names  = all_predictors,
-      pred_wrapper   = pred_wrapper_combined,
-      max_background = shap_max_background,
-      batch_size     = shap_batch_size
-    ),
-    error = function(e) {
-      msg <- paste("SHAP absolu : calcul échoué —", conditionMessage(e))
-      warning(msg, call. = FALSE)
-      log_print(msg)
-      NULL
-    }
+  df_meteo_predictions <- add_lime_explanations(
+    df_meteo_predictions,
+    explainer_presence   = explainer_presence,
+    explainer_abundance  = explainer_abundance,
+    predictors_presence  = predictors_presence,
+    predictors_abundance = predictors_abundance,
+    n_permutations       = lime_n_permutations,
+    n_features           = lime_n_features,
+    batch_size            = lime_batch_size
   )
-
-  if (!is.null(shap_exact_abs)) {
-    df_meteo_predictions <- df_meteo_predictions %>%
-      dplyr::mutate(
-        shap_TM_abs = shap_exact_abs[["TM_0_8"]] + shap_exact_abs[["TM_0_4"]],
-        shap_UM_abs = shap_exact_abs[["UM_5_11"]] + shap_exact_abs[["UM_0_11"]],
-        shap_RR_abs = shap_exact_abs[["RR_1_5"]]
-      )
-    log_print("✓ SHAP absolu calculé (3 colonnes : shap_TM_abs, shap_UM_abs, shap_RR_abs)")
-  } else {
-    df_meteo_predictions <- df_meteo_predictions %>%
-      dplyr::mutate(shap_TM_abs = NA_real_, shap_UM_abs = NA_real_, shap_RR_abs = NA_real_)
-    log_print("⚠ SHAP absolu non disponible — colonnes NA")
-  }
-} else {
-  # X_combined absent = 00_train_models.R n'a pas encore été relancé avec le nouveau code
-  df_meteo_predictions <- df_meteo_predictions %>%
-    dplyr::mutate(shap_TM_abs = NA_real_, shap_UM_abs = NA_real_, shap_RR_abs = NA_real_)
-  log_print("⚠ res_train$X_combined absent — relancer 00_train_models.R pour activer SHAP absolu")
+  log_print("✓ LIME calculé (3 colonnes : lime_TM, lime_UM, lime_RR)")
 }
-
-} # fin du bloc else (SHAP calculé — pas de skip_shap)
 
 
 ######################################################
@@ -803,33 +679,26 @@ albopictus_predictions <- albopictus_predictions %>%
 
 
 ######################################################
-######### Construction de la table finale avec SHAP
+######### Construction de la table finale avec LIME
 ######################################################
 
-# Colonnes SHAP spatial (background = communes du forecast)
-shap_cols     <- c("shap_TM", "shap_UM", "shap_RR")
-# Colonnes SHAP absolu (background = données d'entraînement)
-shap_cols_abs <- c("shap_TM_abs", "shap_UM_abs", "shap_RR_abs")
-all_shap_cols <- c(shap_cols, shap_cols_abs)
+lime_cols <- c("lime_TM", "lime_UM", "lime_RR")
 
-if (all(shap_cols %in% colnames(df_meteo_predictions))) {
+if (all(lime_cols %in% colnames(df_meteo_predictions))) {
 
-  # Colonnes à sélectionner : spatial (obligatoires) + absolu (si disponibles)
-  cols_shap_dispo <- intersect(all_shap_cols, colnames(df_meteo_predictions))
-
-  shap_comm <- df_meteo_predictions %>%
-    dplyr::select(codgeo, date, dplyr::all_of(cols_shap_dispo)) %>%
+  lime_comm <- df_meteo_predictions %>%
+    dplyr::select(codgeo, date, dplyr::all_of(lime_cols)) %>%
     dplyr::mutate(
-      dplyr::across(dplyr::any_of(all_shap_cols), ~round(.x, 4)),
+      dplyr::across(dplyr::all_of(lime_cols), ~round(.x, 4)),
       date = date + 1
     )
 
-  albopictus_predictions_shap <- albopictus_predictions %>%
-    left_join(shap_comm, by = c("codgeo", "date"))
+  albopictus_predictions_final <- albopictus_predictions %>%
+    left_join(lime_comm, by = c("codgeo", "date"))
 
 } else {
-  log_print("⚠ Colonnes SHAP absentes — table identique à la table principale")
-  albopictus_predictions_shap <- albopictus_predictions
+  log_print("⚠ Colonnes LIME absentes — table identique à la table principale")
+  albopictus_predictions_final <- albopictus_predictions
 }
 
 # dbIsValid(con) ne suffit pas pour détecter une connexion coupée côté
@@ -862,28 +731,48 @@ if (!connexion_ok) {
   con <- .reconnecter_bd()
 }
 
-# pred_presence_prob ajoutée au data.frame en amont, mais la table db_layer
-# peut déjà exister en BD sans cette colonne : st_write(..., append = TRUE)
-# échouerait sinon. ALTER TABLE ... ADD COLUMN IF NOT EXISTS est idempotent.
-if (dbExistsTable(con, db_layer) &&
-    !("pred_presence_prob" %in% dbListFields(con, db_layer))) {
-  dbExecute(con, sprintf(
-    "ALTER TABLE %s ADD COLUMN pred_presence_prob DOUBLE PRECISION", db_layer
-  ))
-  log_print(paste("✓ Colonne pred_presence_prob ajoutée à la table", db_layer))
+# pred_presence_prob / lime_TM / lime_UM / lime_RR ajoutées au data.frame en
+# amont, mais la table db_layer peut déjà exister en BD SANS ces colonnes
+# (ex. créée avant leur ajout au pipeline, ou avant le remplacement SHAP ->
+# LIME) : st_write(..., append = TRUE) échouerait sinon avec "column ... does
+# not exist". ALTER TABLE ... ADD COLUMN IF NOT EXISTS est idempotent — ne
+# fait rien si la colonne existe déjà.
+#
+# col ENTRE GUILLEMETS DOUBLES dans le ALTER TABLE — sinon Postgres replie
+# l'identifiant non quoté en minuscules (ex. lime_TM -> lime_tm), alors que
+# dbWriteTable()/st_write() écrit ensuite avec la casse R exacte (lime_TM) :
+# la colonne minuscule créée sans guillemets ne matcherait jamais, d'où
+# "column lime_TM does not exist" au moment de l'écriture (même piège que
+# "X"/"Y" dans 01_initialisation.R).
+if (dbExistsTable(con, db_layer)) {
+  champs_existants <- dbListFields(con, db_layer)
+  colonnes_a_verifier <- c(
+    pred_presence_prob = "DOUBLE PRECISION",
+    lime_TM             = "DOUBLE PRECISION",
+    lime_UM              = "DOUBLE PRECISION",
+    lime_RR              = "DOUBLE PRECISION"
+  )
+  for (col in names(colonnes_a_verifier)) {
+    if (!(col %in% champs_existants)) {
+      dbExecute(con, sprintf(
+        'ALTER TABLE %s ADD COLUMN "%s" %s', db_layer, col, colonnes_a_verifier[[col]]
+      ))
+      log_print(paste("✓ Colonne", col, "ajoutée à la table", db_layer))
+    }
+  }
 }
 
 # Supprimer uniquement les dates qu'on va écrire (évite les doublons si ce
 # script tourne plusieurs fois sur la même fenêtre de dates, et conserve
 # l'historique des dates déjà publiées)
-dates_a_ecrire <- unique(albopictus_predictions_shap$date)
+dates_a_ecrire <- unique(albopictus_predictions_final$date)
 dates_sql      <- paste(paste0("'", dates_a_ecrire, "'"), collapse = ",")
 
 .ecrire_predictions <- function(con) {
   if (dbExistsTable(con, db_layer)) {
     dbExecute(con, sprintf("DELETE FROM %s WHERE date IN (%s)", db_layer, dates_sql))
   }
-  st_write(albopictus_predictions_shap, dsn = con, layer = db_layer, append = TRUE)
+  st_write(albopictus_predictions_final, dsn = con, layer = db_layer, append = TRUE)
 }
 
 # 1re tentative — si elle échoue (coupure réseau juste après le test ci-dessus,
@@ -904,12 +793,12 @@ if (!ecriture_ok) {
   log_print("✓ Écriture BD réussie après reconnexion (2e tentative)")
 }
 
-log_print(paste("✓ Prédictions + SHAP publiées →", db_layer,
-                "| communes :", length(unique(albopictus_predictions_shap$codgeo)),
-                "| colonnes SHAP :", length(all_shap_cols)))
+log_print(paste("✓ Prédictions + LIME publiées →", db_layer,
+                "| communes :", length(unique(albopictus_predictions_final$codgeo)),
+                "| colonnes LIME :", length(lime_cols)))
 
 } else {
-  log_print(paste("✓ Aucune nouvelle donnée météo — prédictions/SHAP non recalculés, table",
+  log_print(paste("✓ Aucune nouvelle donnée météo — prédictions/LIME non recalculés, table",
       db_layer, "inchangée. (Mettre force_recompute <- TRUE pour forcer.)"))
 }
 
