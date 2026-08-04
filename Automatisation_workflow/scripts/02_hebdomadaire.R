@@ -6,10 +6,6 @@
 # quel que soit l'écart depuis la dernière exécution).
 # Prérequis : Script 1 (initialisation) déjà exécuté
 #
-# SHAP remplacé par LIME (demande Paul, voir scripts/lime.R) — colonnes
-# lime_TM/lime_UM/lime_RR au lieu de shap_TM/UM/RR/*_abs. Testé dans
-# pipeline_test/ avant d'être reporté ici.
-#
 # CE QUE FAIT CE CODE (dans l'ordre) :
 #   1. Met à jour la météo en BD (db_table_meteo_grid, format brut X/Y/date/TM/RR/UM) :
 #      remplace le forecast déjà périmé par les vraies données historiques
@@ -72,10 +68,23 @@ log_print(paste("=== Run hebdomadaire —", Sys.time(), "==="))
 options(datatable.week = "legacy")
 
 # ============================================================
+# Parallélisme (calcul LIME, via furrr) — reproductible en cron
+# ============================================================
+# n_workers défini dans config.R. Réglé ICI (au lieu de dépendre d'un
+# future::plan() tapé à la main en console avant de sourcer ce script) pour
+# que les runs cron/backfill soient parallélisés de façon identique à chaque
+# fois. Si ce script est resourcé plusieurs fois dans la même session (ex.
+# boucle de backfill par tranches), plan() est idempotent — pas de coût
+# significatif à le rappeler.
+future::plan(future::multisession, workers = n_workers)
+log_print(paste("Parallélisme LIME : multisession,", n_workers, "workers"))
+
+# ============================================================
 # Paramètres locaux (lus depuis config.R)
 # ============================================================
-# grid_res, path_models, n_days_forecast définis dans config.R
-lag_max <- 84
+# grid_res, path_models, n_days_forecast, lag_max définis dans config.R —
+# lag_max est aussi utilisé par 01_initialisation.R (marge de recul avant la
+# 1ère semaine publiée) : centralisé pour que les deux restent synchronisés.
 
 # ============================================================
 # Connexion à la base de données
@@ -290,11 +299,11 @@ log_print(paste("Fraîcheur météo — BD :", format(max_date_bd),
 ######################################################
 
 # backfill_start_date / backfill_end_date : si les DEUX sont définies (depuis
-# un script appelant, ex. 06_backfill_shap_par_tramos.R), remplacent
-# complètement la logique init_lookback/n_days_forecast ci-dessous pour
-# cibler une plage calendaire FIXE, au lieu d'une fenêtre ancrée sur
-# Sys.Date(). Permet de backfiller le SHAP historique par tranches sans
-# re-traiter à chaque fois les années déjà faites.
+# un script appelant, ex. un backfill par tranches), remplacent complètement
+# la logique init_lookback/n_days_forecast ci-dessous pour cibler une plage
+# calendaire FIXE, au lieu d'une fenêtre ancrée sur Sys.Date(). Permet de
+# backfiller l'explicabilité (LIME) historique par tranches sans re-traiter
+# à chaque fois les années déjà faites.
 #
 # ⚠ Ces variables peuvent "coller" entre sessions R si un script de backfill
 # est interrompu avant son rm() de fin de boucle — 01_initialisation.R les
@@ -310,11 +319,11 @@ log_print(paste("Fraîcheur météo — BD :", format(max_date_bd),
 # plus bas, sur meteo2, comme pour les 2 autres modes) :
 #   - fenetre_fixe       : toujours [Sys.Date() - n_days_forecast, Sys.Date() +
 #                           n_days_forecast] — TOUJOURS incluse. Nécessaire
-#                           pour le Run 2 de 01_initialisation.R (SHAP réel)
-#                           juste après le Run 1 (historique, SHAP NA) : le
+#                           pour le Run 2 de 01_initialisation.R (LIME réel)
+#                           juste après le Run 1 (historique, LIME NA) : le
 #                           Run 1 publie jusqu'à l'horizon de forecast, donc
 #                           sans fenetre_fixe le Run 2 croirait n'avoir rien
-#                           à refaire et ne recalculerait jamais le SHAP réel
+#                           à refaire et ne recalculerait jamais le LIME réel
 #                           des prédictions récentes.
 #   - fenetre_rattrapage : tout ce qui manque depuis la dernière prédiction
 #                          publiée dans db_layer — pour ne rien sauter si le
@@ -405,7 +414,17 @@ meteo <- meteo %>% dplyr::distinct(codgeo, date, .keep_all = TRUE)
 # correct dans TOUS les cas (1 ou plusieurs lundis par commune).
 meteo2 <- meteo %>%
   dplyr::select(codgeo, date) %>%
-  mutate(weekday = wday(date)) %>%
+  # lubridate::wday() EXPLICITE (pas wday() nu) : lubridate ET data.table
+  # exportent tous les deux une fonction wday() — comme library(data.table)
+  # est chargé APRÈS library(lubridate) plus haut dans ce script,
+  # data.table::wday() masque celle de lubridate pour tout appel non préfixé,
+  # et options(datatable.week = "legacy") change en plus son comportement.
+  # Résultat, déjà observé en pratique : weekday == 1 signifie LUNDI ou
+  # DIMANCHE selon l'état exact de la session R (ordre de chargement des
+  # packages, detach/reload...) — un bug non-reproductible, silencieux, qui a
+  # fait sauter des semaines entières lors d'un backfill (2026-07-31).
+  # week_start = 1 rend le sens de "1" explicite et indépendant de la session.
+  mutate(weekday = lubridate::wday(date, week_start = 1)) %>%
   {
     if (.backfill_plage_fixe) {
       dplyr::filter(., weekday == 1,
@@ -478,8 +497,6 @@ if (!skip_recompute) {
 
 res_presence  <- readRDS(file.path(path_models, "res_presence_LOSO_probabilistic.rds"))
 res_abundance <- readRDS(file.path(path_models, "res_abundance_LOSO_quantile_rf.rds"))
-# res_training_data.rds (res_train, background SHAP absolu) n'est plus lu ici —
-# n'était utilisé que par le bloc SHAP absolu, retiré (SHAP -> LIME, demande Paul).
 
 mod_presence   <- res_presence$model
 rf_abundance_q <- res_abundance$model_quantile
@@ -489,20 +506,18 @@ predictors_presence  <- c("TM_0_8", "UM_5_11")
 predictors_abundance <- c("TM_0_4", "UM_0_11", "RR_1_5")
 
 # explainer_presence/explainer_abundance : utilisés par add_lime_explanations()
-# (00_functions_models.R) plus bas. Construits sur les données D'ENTRAÎNEMENT
-# (res_*$df_mod, sauvegardées par 00_train_models.R) — LIME a besoin de cette
-# distribution pour discrétiser chaque prédicteur en n_bins (lime::lime()).
-train_data_presence  <- res_presence$df_mod
-train_data_abundance <- res_abundance$df_mod
-
-explainer_presence <- lime::lime(
-  train_data_presence %>% dplyr::select(dplyr::all_of(predictors_presence)),
-  mod_presence, n_bins = 8
-)
-explainer_abundance <- lime::lime(
-  train_data_abundance %>% dplyr::select(dplyr::all_of(predictors_abundance)),
-  rf_abundance_q, n_bins = 8
-)
+# (00_functions_models.R) plus bas. Construits UNE SEULE FOIS à l'entraînement
+# (00_train_models.R, section 9b) — les reconstruire ici à chaque run serait
+# du travail redondant (lime::lime() ne dépend que des données
+# d'entraînement, jamais des nouvelles prédictions).
+# SÉPARÉS des RDS modèle (2026-07-31, demande utilisateur) : fichiers propres
+# explainer_presence.rds/explainer_abundance.rds, plutôt qu'un élément
+# $explainer dans res_presence/res_abundance. ATTENTION reproductibilité :
+# si un modèle est réentraîné, ces 2 fichiers doivent l'être aussi (toujours
+# le cas si on relance 00_train_models.R en entier — voir sa section 10) —
+# sinon LIME expliquerait un modèle différent de celui réellement chargé.
+explainer_presence  <- readRDS(file.path(path_models, "explainer_presence.rds"))
+explainer_abundance <- readRDS(file.path(path_models, "explainer_abundance.rds"))
 
 
 ######################################################
@@ -521,13 +536,11 @@ df_meteo_predictions <- predict_two_part_uncertainty(
 
 
 ######################################################
-######### Calcul LIME 
+######### Calcul LIME
 ######################################################
 
-# Contrairement au SHAP spatial qu'il remplace (un modèle combiné unique, une
-# seule explication par ligne), LIME explique séparément le modèle qui a
-# effectivement produit la prédiction affichée pour cette ligne, selon le
-# seuil pred_presence_prob (même logique que lime.R de Paul) :
+# LIME explique séparément le modèle qui a effectivement produit la
+# prédiction affichée pour cette ligne, selon le seuil pred_presence_prob :
 #   - pred_presence_prob <  0.5 -> expliquée par le modèle de PRÉSENCE
 #     (TM_0_8, UM_5_11 -> lime_TM, lime_UM ; lime_RR = NA, la présence
 #     n'utilise pas RR)
@@ -536,17 +549,22 @@ df_meteo_predictions <- predict_two_part_uncertainty(
 # add_lime_explanations() (00_functions_models.R) fait ce partitionnement et
 # renvoie les 3 colonnes lime_TM/lime_UM/lime_RR jointes sur (codgeo, date).
 
-# skip_shap : nom historique (défini par 01_initialisation.R lors du run
-# historique complet), réutilisé tel quel pour désactiver aussi LIME sur des
-# milliers de semaines (trop lent). En run normal, non défini → LIME calculé.
-if (exists("skip_shap") && isTRUE(skip_shap)) {
+# skip_lime : renommé (2026-07-31) depuis skip_shap — dernière trace du nom
+# SHAP dans les scripts actifs, nettoyée. Utilisé pour désactiver LIME sur
+# des milliers de semaines d'un coup (trop lent) lors du chargement
+# historique. En run normal, non défini → LIME calculé. Les anciens scripts
+# 05_backfill_shap.R/06_backfill_shap_por_tramos.R (abandonnés, ne pas
+# relancer) référencent encore skip_shap — volontairement laissés tels
+# quels, ce sont des artefacts figés de la migration SHAP → LIME.
+if (exists("skip_lime") && isTRUE(skip_lime)) {
   df_meteo_predictions <- df_meteo_predictions %>%
     dplyr::mutate(lime_TM = NA_real_, lime_UM = NA_real_, lime_RR = NA_real_)
   log_print("ℹ LIME désactivé (chargement historique initial) — colonnes NA")
 } else {
 
-  # lime_n_permutations/lime_n_features/lime_batch_size : mêmes valeurs par
-  
+  # lime_n_permutations/lime_n_features/lime_batch_size : valeurs par défaut
+  # du calcul LIME — surchargeables depuis un script appelant (ex. un futur
+  # backfill par tranches, sur le modèle des backfills existants).
   if (!exists("lime_n_permutations")) lime_n_permutations <- 200
   if (!exists("lime_n_features"))     lime_n_features     <- 6
   if (!exists("lime_batch_size"))     lime_batch_size     <- 1000
@@ -573,11 +591,19 @@ if (exists("skip_shap") && isTRUE(skip_shap)) {
 # rasterize_to_roi() ici, on sélectionne directement.
 
 abundance <- df_meteo_predictions %>%
-  dplyr::select(codgeo, date, pred_combined_mean) %>%
+  # TM_0_8/TM_0_4 : prédicteurs de température déjà calculés plus haut
+  # (utilisés par les modèles de présence/abondance) — ajoutés ici tels
+  # quels à la table publiée (demande utilisateur, 2026-07-31), pour
+  # traçabilité/lecture directe des valeurs d'entrée des modèles.
+  dplyr::select(codgeo, date, pred_combined_mean, TM_0_8, TM_0_4) %>%
   dplyr::rename(combined_abundance_q50 = pred_combined_mean) %>%
   dplyr::mutate(
     combined_abundance_q50 = round(combined_abundance_q50, 1),
-    date = date + 1   # décalage d'un jour
+    TM_0_8 = round(TM_0_8, 1),
+    TM_0_4 = round(TM_0_4, 1)
+    # BUG corrigé (2026-07-31) : ce bloc faisait "date = date + 1" ici — voir
+    # la note détaillée sur meteo_out plus bas (même bug, l'inverse). "date"
+    # ici est déjà th_date (le vrai lundi), sans décalage à appliquer.
   )
 # Pas de left_join(roi_info) ici — libgeo vient déjà de meteo_out (évite les
 # colonnes communes implicites qui génèrent le warning many-to-many)
@@ -585,21 +611,21 @@ abundance <- df_meteo_predictions %>%
 combined_q05 <- df_meteo_predictions %>%
   dplyr::select(codgeo, date, pred_combined_q05) %>%
   dplyr::rename(combined_abundance_q05 = pred_combined_q05) %>%
-  dplyr::mutate(combined_abundance_q05 = round(combined_abundance_q05, 1), date = date + 1)
+  dplyr::mutate(combined_abundance_q05 = round(combined_abundance_q05, 1))
 
 combined_q95 <- df_meteo_predictions %>%
   dplyr::select(codgeo, date, pred_combined_q95) %>%
   dplyr::rename(combined_abundance_q95 = pred_combined_q95) %>%
-  dplyr::mutate(combined_abundance_q95 = round(combined_abundance_q95, 1), date = date + 1)
+  dplyr::mutate(combined_abundance_q95 = round(combined_abundance_q95, 1))
 
 combined_sd <- df_meteo_predictions %>%
   dplyr::select(codgeo, date, pred_combined_sd) %>%
   dplyr::rename(combined_abundance_sd = pred_combined_sd) %>%
-  dplyr::mutate(combined_abundance_sd = round(combined_abundance_sd, 2), date = date + 1)
+  dplyr::mutate(combined_abundance_sd = round(combined_abundance_sd, 2))
 
 presence_prob <- df_meteo_predictions %>%
   dplyr::select(codgeo, date, pred_presence_prob) %>%
-  dplyr::mutate(pred_presence_prob = round(pred_presence_prob, 3), date = date + 1)
+  dplyr::mutate(pred_presence_prob = round(pred_presence_prob, 3))
 
 abundance <- abundance %>%
   left_join(combined_q05,   by = c("codgeo", "date")) %>%
@@ -624,7 +650,22 @@ meteo_out <- df_meteo_pieges_summ %>%
     mean_temperature = round(mean_temperature, 1),
     mean_rainfall    = round(mean_rainfall,    1),
     mean_humidity    = round(mean_humidity,    1),
-    date             = date + 2   # décalage de deux jours
+    # BUG corrigé (2026-07-31, trouvé en investiguant le pendiente #1 — voir
+    # resumen_y_prompt_continuidad.md) : "date" ici vaut th_date - 1 (pas
+    # th_date), car fun_summarize_week() construit la "semaine 0" à partir
+    # des lags JOURNALIERS 1 à 6 seulement (6 jours, pas 7 — lag_n démarre à
+    # 1, pas 0, donc floor(7/7)=1 fait basculer le jour lag=7 dans la semaine
+    # 1) et prend "date = max(date)" de ce groupe = th_date - 1. Le code
+    # faisait "date + 2" ici ET "date + 1" sur abundance/lime (qui partent,
+    # eux, de th_date directement) — les deux se rejoignaient bien entre eux
+    # (d'où l'absence d'erreur/de ligne perdue), mais le résultat publié était
+    # th_date + 1 (ex. un mardi) au lieu de th_date (le vrai lundi) —
+    # confirmé en BD : la date la plus récente publiée tombait un mardi
+    # (EXTRACT(DOW)=2). Fix : +1 ici (pour repasser de th_date-1 à th_date),
+    # et suppression du "+1" sur abundance/combined_q05/q95/sd/presence_prob/
+    # lime_comm plus bas (qui partent déjà de th_date, sans décalage à
+    # appliquer).
+    date             = date + 1
   ) %>%
   dplyr::left_join(roi_info, by = "codgeo")
 
@@ -689,8 +730,9 @@ if (all(lime_cols %in% colnames(df_meteo_predictions))) {
   lime_comm <- df_meteo_predictions %>%
     dplyr::select(codgeo, date, dplyr::all_of(lime_cols)) %>%
     dplyr::mutate(
-      dplyr::across(dplyr::all_of(lime_cols), ~round(.x, 4)),
-      date = date + 1
+      dplyr::across(dplyr::all_of(lime_cols), ~round(.x, 4))
+      # BUG corrigé (2026-07-31) : "date = date + 1" retiré ici — voir la
+      # note sur meteo_out plus haut. "date" est déjà th_date, sans décalage.
     )
 
   albopictus_predictions_final <- albopictus_predictions %>%
@@ -733,10 +775,9 @@ if (!connexion_ok) {
 
 # pred_presence_prob / lime_TM / lime_UM / lime_RR ajoutées au data.frame en
 # amont, mais la table db_layer peut déjà exister en BD SANS ces colonnes
-# (ex. créée avant leur ajout au pipeline, ou avant le remplacement SHAP ->
-# LIME) : st_write(..., append = TRUE) échouerait sinon avec "column ... does
-# not exist". ALTER TABLE ... ADD COLUMN IF NOT EXISTS est idempotent — ne
-# fait rien si la colonne existe déjà.
+# (ex. créée avant leur ajout au pipeline) : st_write(..., append = TRUE)
+# échouerait sinon avec "column ... does not exist". ALTER TABLE ... ADD
+# COLUMN IF NOT EXISTS est idempotent — ne fait rien si la colonne existe déjà.
 #
 # col ENTRE GUILLEMETS DOUBLES dans le ALTER TABLE — sinon Postgres replie
 # l'identifiant non quoté en minuscules (ex. lime_TM -> lime_tm), alors que
@@ -750,7 +791,15 @@ if (dbExistsTable(con, db_layer)) {
     pred_presence_prob = "DOUBLE PRECISION",
     lime_TM             = "DOUBLE PRECISION",
     lime_UM              = "DOUBLE PRECISION",
-    lime_RR              = "DOUBLE PRECISION"
+    lime_RR              = "DOUBLE PRECISION",
+    # TM_0_8/TM_0_4 : prédicteurs de température ajoutés à la table publiée
+    # (demande utilisateur, 2026-07-31) — voir "abundance" plus haut.
+    TM_0_8               = "DOUBLE PRECISION",
+    TM_0_4               = "DOUBLE PRECISION",
+    # level : "commune" ou "departement" (demande utilisateur, 2026-07-31) —
+    # vient de roi_info (config.R, admin_levels), rejoint via meteo_out plus
+    # haut (left_join(roi_info, by = "codgeo")), aucun calcul ici.
+    level                = "TEXT"
   )
   for (col in names(colonnes_a_verifier)) {
     if (!(col %in% champs_existants)) {

@@ -15,8 +15,8 @@
 
 # Zone d'intérêt — lue depuis une table BD contenant les limites administratives
 db_table_admin <- "administrative_boundaries"
-admin_dep      <- 34          # code département à retenir
-admin_level    <- "commune"   # niveau administratif à retenir
+admin_dep      <- 34                          # code département à retenir
+admin_levels   <- c("commune", "departement") # niveaux administratifs à retenir
 
 # Bounding box optionnelle pour limiter le grid météo (NULL = utilise le bbox du ROI)
 # Exemple Hérault : roi_bbox <- c(xmin=2.40, xmax=4.30, ymin=43.1, ymax=44.0)
@@ -42,6 +42,29 @@ n_days_forecast <- 14
 # passé à sf::st_make_grid() dans make_grid(), utilisé aussi pour le snapping
 # des coordonnées dans aggregate_meteo_to_roi().
 grid_res <- 0.05
+
+# lag_max : nombre de jours de recul météo nécessaires pour les prédicteurs
+# les plus longs (jusqu'à 11 SEMAINES = 77 jours réels, voir
+# fun_summarize_week() dans 00_functions_formats.R — 84 laisse 1 semaine de
+# marge). Utilisé par 02_hebdomadaire.R (.read_from) ET 01_initialisation.R
+# (marge réservée avant la 1ère semaine publiée) — centralisé ici pour que
+# les deux restent synchronisés (sinon : NULL sur toutes les communes des
+# premières semaines de l'historique, bug déjà rencontré).
+lag_max <- 84
+
+# n_workers : nombre de workers pour le calcul parallèle (LIME, via furrr).
+# Utilisé par 02_hebdomadaire.R pour future::plan(multisession, workers =
+# n_workers), directement dans le script (reproductible en cron, sans dépendre
+# d'un plan() réglé à la main en console). max(1, availableCores() - 1)
+# laisse 1 coeur libre pour l'OS.
+n_workers <- max(1, future::availableCores() - 1)
+
+# run_seasonal_forecast : si TRUE, main.R lance
+# scripts/07_seasonal_forecast_predictions.R juste après 02_hebdomadaire.R.
+# Par défaut FALSE (script exploratoire, manuel). 07 n'écrit jamais dans une
+# table de production (uniquement une table de TEST) — l'activer ne change
+# aucune donnée publiée, juste la fréquence de rafraîchissement de ce test.
+run_seasonal_forecast <- FALSE
 
 # Dossier contenant les modèles entraînés (.rds, voir 00_train_models.R)
 path_models <- here::here("models")
@@ -93,7 +116,26 @@ db_table_mean_2y  <- "mean_2y"
   user = db_user, password = db_password
 )
 roi <- sf::st_read(.con_roi, db_table_admin) |>
-  dplyr::filter(dep == admin_dep, level == admin_level)
+  dplyr::filter(dep == admin_dep, level %in% admin_levels)
 roi <- sf::st_transform(roi, 4326)
 DBI::dbDisconnect(.con_roi)
 rm(.con_roi)
+
+# geopolygon / roi_info / all_codgeo : dérivés de roi, calculés ici une seule
+# fois (au lieu d'être recalculés dans chaque script — même demande Paul que
+# pour roi lui-même). sf_use_s2(FALSE) requis : st_union/st_make_valid
+# échouent sur certaines géométries ROI avec s2 activé (erreur "format non
+# supporté"). Les messages "Spherical geometry switched off/on" et "assumes
+# planar" sont normaux et attendus ici.
+sf::sf_use_s2(FALSE)
+roi        <- sf::st_make_valid(roi)
+geopolygon <- sf::st_union(roi)
+sf::sf_use_s2(TRUE)
+
+# roi_info : QUOI = data.frame codgeo/libgeo/level sans géométrie. FAIT =
+#   utilisé pour les jointures sur les tables de prédictions publiées.
+#   "level" distingue les lignes "commune" des lignes "departement".
+roi_info <- sf::st_drop_geometry(roi) |> dplyr::select(codgeo, libgeo, level)
+
+# all_codgeo : liste (texte) des codgeo du ROI.
+all_codgeo <- as.character(unique(roi$codgeo))

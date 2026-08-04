@@ -64,8 +64,8 @@ make_grid <- function(geopolygon, roi_bbox = NULL, grid_res = 0.05) {
 #' @description
 #' Fonction générique de rasterisation + extraction spatiale, utilisée par
 #' aggregate_meteo_to_roi() (agrégation météo) et par le calcul d'agrégats
-#' spatiaux de colonnes SHAP. Gère automatiquement la résolution à partir
-#' des données.
+#' spatiaux de colonnes LIME (lime_TM/lime_UM/lime_RR). Gère automatiquement
+#' la résolution à partir des données.
 #'
 #' La construction du raster multi-dates est VECTORISÉE (terra::cellFromXY()
 #' une seule fois sur tous les points, puis remplissage direct de la matrice
@@ -87,7 +87,7 @@ make_grid <- function(geopolygon, roi_bbox = NULL, grid_res = 0.05) {
 #'
 #' @examples
 #' mean_tm <- rasterize_to_roi(meteo_comm, "TM", roi)
-#' mean_shap <- rasterize_to_roi(df_pred, "shap_TM_0_4", roi)
+#' mean_lime <- rasterize_to_roi(df_pred, "lime_TM", roi)
 rasterize_to_roi <- function(df, var_col, roi,
                                    x_col    = "X_snap",
                                    y_col    = "Y_snap",
@@ -163,24 +163,44 @@ rasterize_to_roi <- function(df, var_col, roi,
   return(result)
 }
 
-#' Agrège des données météo brutes (par point de grille) à l'échelle de la commune
-#'
-#' @description
-#' Convertit les données brutes Open-Meteo (X/Y/date/TM/RR/UM) en données
-#' agrégées par commune via rasterize_to_roi(). Appelée à la LECTURE dans
-#' 02_hebdomadaire.R (et 07_seasonal_forecast_predictions.R) — la BD stocke
-#' la météo au format brut par point de grille (db_table_meteo_grid),
-#' l'agrégation par commune se fait au moment de l'utilisation plutôt qu'à
-#' l'écriture.
-#'
-#' Avant le calcul, les coordonnées X/Y sont "snappées" sur la grille
-#' (arrondies à la résolution grid_res) avec un petit epsilon avant round().
-#' Sans cet epsilon, R arrondit les .5 exacts vers l'entier PAIR le plus
-#' proche ("banker's rounding" — round(78.5) = 78, pas 79) : une coordonnée
-#' tombant pile sur une frontière de grille (X / grid_res == un .5 exact)
-#' se décale alors d'une cellule entière, ce qui peut faire disparaître
-#' silencieusement une commune de la sortie agrégée (cellule NA à
-#' l'extraction, filtrée par le !is.nan() de rasterize_to_roi()).
+######################################################
+######### aggregate_meteo_to_roi() — agrégation météo brute -> par commune
+######################################################
+# Fonction CRITIQUE du pipeline : c'est le pont entre le stockage météo BRUT
+# (db_table_meteo_grid, une ligne par point de grille x date x variable) et
+# tout le reste du pipeline, qui raisonne exclusivement par COMMUNE (codgeo)
+# — construction des lags, modèles, prédictions publiées. Appelée à CHAQUE
+# lecture (02_hebdomadaire.R, 07_seasonal_forecast_predictions.R), jamais à
+# l'écriture : la BD ne stocke jamais de valeur déjà agrégée par commune,
+# tout se recalcule ici à la volée à partir du brut. Ce choix d'architecture
+# (agrégation à la LECTURE plutôt qu'à l'écriture) évite d'avoir à
+# recalculer/réécrire tout l'historique déjà stocké si une commune ou une
+# résolution de grille change un jour, au prix de refaire ce calcul à
+# chaque run.
+#
+# CE QUE FAIT LA FONCTION, dans l'ordre :
+#   - Snap : les coordonnées X/Y brutes sont "snappées" sur la grille
+#     théorique (round(X / grid_res) * grid_res) — nécessaire car les
+#     coordonnées renvoyées par l'API Open-Meteo peuvent avoir un bruit de
+#     précision flottante minime par rapport à la grille construite par
+#     make_grid().
+#   - Rasterisation : pour chaque variable météo (TM, RR, UM), appelle
+#     rasterize_to_roi() séparément — transforme les points de grille
+#     snappés en raster, puis exact_extract() la moyenne par polygone
+#     (commune) du ROI.
+#   - Fusion : les 3 résultats (TM, RR, UM) sont rejoints par (codgeo, date)
+#     en un seul data.frame — une ligne par commune x date, le format
+#     attendu par le reste du pipeline (lags, prédictions).
+#
+# ⚠ EPSILON AVANT round() (X_snap/Y_snap ci-dessous) : sans le petit
+#   epsilon (1e-6) ajouté avant round(), R utilise le "banker's rounding"
+#   sur les .5 exacts (round(78.5) = 78, pas 79 — arrondi au PAIR le plus
+#   proche). Une coordonnée tombant pile sur une frontière de grille
+#   (X / grid_res == un .5 exact) se décale alors d'une cellule entière,
+#   ce qui peut faire disparaître SILENCIEUSEMENT une commune entière de la
+#   sortie agrégée (cellule NA à l'extraction, filtrée par le !is.nan() de
+#   rasterize_to_roi()) — bug réel de ce type déjà rencontré sur ce
+#   pipeline, à garder en tête si une commune "disparaît" sans erreur.
 #'
 #' @param raw_df   data.frame avec colonnes X, Y, date, TM, RR, UM             [ENTRÉE]
 #' @param roi      Objet sf — communes du ROI                                    [ENTRÉE]

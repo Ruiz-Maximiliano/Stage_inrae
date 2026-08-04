@@ -30,7 +30,7 @@
 #   comme archive au format commune.
 #
 # PARAMÈTRES D'ENTRÉE (à fournir) :
-#   Tous viennent de config.R : db_table_admin, admin_dep, admin_level, roi_bbox,
+#   Tous viennent de config.R : db_table_admin, admin_dep, admin_levels, roi_bbox,
 #   n_days_history, n_days_forecast, openmeteo_model, db_host/name/port/user/password,
 #   db_table_meteo_grid. Rien à fournir directement dans CE script.
 #
@@ -64,19 +64,25 @@ source(here("scripts", "00_functions_api.R"))
 source(here("scripts", "00_functions_formats.R"))
 source(here("config.R"))
 
-# Nettoyage préventif : ce script fixe lui-même init_lookback / skip_shap /
+# Nettoyage préventif : ce script fixe lui-même init_lookback / skip_lime /
 # force_recompute / init_forecast_done pour ses deux runs (section 5) — mais
-# des variables laissées par un backfill par tranches interrompu
-# (06_backfill_shap_por_tramos.R, ex. backfill_start_date/end_date) peuvent
-# rester "collées" dans la session R si son rm() de fin de boucle n'a jamais
-# été atteint. 02_hebdomadaire.R leur donne la PRIORITÉ sur init_lookback
-# (voir .backfill_plage_fixe dans ce script) sans savoir qu'elles viennent
-# d'ailleurs — on nettoie donc ici, avant de commencer, toute variable
-# "optionnelle" que ce script ne contrôle pas lui-même.
+# des variables laissées par un backfill par tranches interrompu (ex.
+# backfill_start_date/end_date) peuvent rester "collées" dans la session R si
+# son rm() de fin de boucle n'a jamais été atteint. 02_hebdomadaire.R leur
+# donne la PRIORITÉ sur init_lookback (voir .backfill_plage_fixe dans ce
+# script) sans savoir qu'elles viennent d'ailleurs — on nettoie donc ici,
+# avant de commencer, toute variable "optionnelle" que ce script ne contrôle
+# pas lui-même.
+# NOTE (2026-07-31) : skip_shap renommé skip_lime (dernière trace du nom SHAP
+# dans les scripts actifs). shap_max_background/shap_batch_size restent tels
+# quels ici — pas des variables actives, juste un filet de sécurité pour
+# nettoyer ces noms s'ils traînent encore dans une session très ancienne
+# (pré-migration LIME), aucun code actuel ne les définit ni ne les lit.
 .vars_a_nettoyer <- c("backfill_start_date", "backfill_end_date",
-                       "init_lookback", "skip_shap",
+                       "init_lookback", "skip_lime",
                        "force_recompute", "init_forecast_done",
-                       "shap_max_background", "shap_batch_size")
+                       "shap_max_background", "shap_batch_size",
+                       "lime_n_permutations", "lime_n_features", "lime_batch_size")
 rm(list = intersect(.vars_a_nettoyer, ls(envir = .GlobalEnv)), envir = .GlobalEnv)
 rm(.vars_a_nettoyer)
 
@@ -142,11 +148,21 @@ make_meteo_prep <- function(coords_df, n_days) {
 # 2. Chargement de l'historique météo → BD (format grille brut)
 # ============================================================
 
-log_print(paste("Chargement de l'historique météo (", n_days_history, "jours)..."))
+log_print(paste("Chargement de l'historique météo (", n_days_history, "jours, +", lag_max,
+                "jours de marge lags)..."))
 
-start_date     <- Sys.Date() - n_days_history
+# start_date recule de lag_max jours SUPPLÉMENTAIRES par rapport à
+# n_days_history — cette marge n'est JAMAIS publiée comme semaine prédite
+# (voir init_lookback, section 5 plus bas, qui la retranche explicitement),
+# elle sert uniquement à donner aux TOUTES premières semaines publiées un
+# recul météo complet pour leurs lags (jusqu'à 11 semaines = 77 jours réels,
+# voir fun_summarize_week()). Sans cette marge, les ~6 premières semaines de
+# tout run d'initialisation complet manquent de lags, sont éliminées par
+# na.omit() dans 02_hebdomadaire.R, et publient NULL pour toutes les communes
+# (bug réel rencontré et corrigé le 2026-07-31).
+start_date     <- Sys.Date() - n_days_history - lag_max
 end_date       <- Sys.Date() - 1
-expected_dates <- n_days_history * 0.80
+expected_dates <- (n_days_history + lag_max) * 0.80
 phase_needed   <- FALSE
 
 # db_table_meteo_grid est censée être créée soit par ce script, soit par
@@ -406,8 +422,8 @@ dbDisconnect(con)
 # avant de le fermer — logr ne supporte qu'un seul log actif à la fois, donc
 # ce log doit être fermé avant d'appeler 02_hebdomadaire.R, qui ouvre (et
 # ferme) le sien, une fois par run (logs/hebdomadaire_<date>.log).
-log_print("--- Run 1/2 à suivre : prédictions historiques (SHAP = NA) ---")
-log_print("--- Run 2/2 à suivre : prédictions récentes avec SHAP ---")
+log_print("--- Run 1/2 à suivre : prédictions historiques (LIME = NA) ---")
+log_print("--- Run 2/2 à suivre : prédictions récentes avec LIME ---")
 log_print(paste("=== Fin du run initialisation météo —", Sys.time(), "==="))
 log_close()
 
@@ -416,22 +432,69 @@ log_close()
 # ============================================================
 # Deux runs de 02_hebdomadaire.R (chacun avec son propre log, voir ci-dessus) :
 #
-# Run 1 — historique complet, SHAP désactivé :
+# Run 1 — historique complet, LIME désactivé :
 #   init_lookback = nbre de jours depuis le début de db_table_meteo_grid → tous les lundis
-#   skip_shap = TRUE → SHAP = NA (trop lent sur des années de données)
+#   skip_lime = TRUE → LIME = NA (trop lent sur des années de données)
 #   force_recompute = TRUE → ne pas sauter même si meteo_changed = FALSE
 #
-# Run 2 — prédictions récentes avec SHAP :
+# Run 2 — prédictions récentes avec LIME :
 #   fenêtre normale (n_days_forecast jours en arrière)
-#   SHAP calculé normalement → écrase les prédictions récentes avec valeurs SHAP
-init_lookback  <- as.integer(Sys.Date() - meteo_min_date) + 1
-skip_shap      <- TRUE
+#   LIME calculé normalement → écrase les prédictions récentes avec valeurs LIME
+#
+# "- lag_max" : la 1ère semaine publiée doit rester à AU MOINS lag_max jours
+# de meteo_min_date (voir start_date, section 2 plus haut, qui télécharge
+# exactement cette marge en plus) — sinon .read_from dans 02_hebdomadaire.R
+# demande des jours antérieurs à meteo_min_date, qui n'existent pas, et
+# na.omit() élimine ces semaines pour toutes les communes (NULL en BD).
+# max(..., 7) : garde-fou pour ne jamais tomber à 0/négatif si l'historique
+# réellement en BD est plus court que lag_max (backup CSV partiel, etc.).
+init_lookback  <- max(as.integer(Sys.Date() - meteo_min_date) + 1 - lag_max, 7)
+skip_lime      <- TRUE
 force_recompute <- TRUE
 init_forecast_done <- TRUE
 source(here("scripts", "02_hebdomadaire.R"))
-rm(init_lookback, skip_shap, force_recompute, init_forecast_done)
+rm(init_lookback, skip_lime, force_recompute, init_forecast_done)
 
 force_recompute    <- TRUE
 init_forecast_done <- TRUE
 source(here("scripts", "02_hebdomadaire.R"))
 rm(force_recompute, init_forecast_done)
+
+# ============================================================
+# 6. Backfill complet de LIME sur tout l'historique
+# ============================================================
+# Après les Runs 1/2 ci-dessus, l'historique complet a des prédictions
+# (présence/abondance) mais LIME reste en NA sur les années anciennes — Run 1
+# l'a désactivé exprès (skip_lime = TRUE) pour aller vite. Sans ce bloc, il
+# fallait relancer ce backfill à la main après coup (demande utilisateur,
+# 2026-07-31 : "sino no tiene sentido" — intégré ici pour qu'un seul
+# source("01_initialisation.R") suffise à tout avoir, LIME inclus).
+#
+# PAR ANNÉE CIVILE (plutôt qu'un seul backfill de tout l'historique d'un
+# coup) : plus gérable en mémoire/temps, et permet de reprendre facilement
+# si la session R plante à mi-chemin (relancer ce for() en ajustant
+# annee_min ci-dessous à l'année où ça s'est arrêté).
+#
+# Idempotent avec Run 2 : les dernières semaines seront recalculées une
+# 2e fois ici (déjà avec LIME réel depuis Run 2) — résultat identique,
+# juste un peu de calcul redondant, pas de risque.
+# NOTE : pas de log_print() ici — le log de CE script (lf) a déjà été fermé
+# plus haut (section 4, avant les Runs 1/2), et logr ne supporte qu'un log
+# actif à la fois. cat() suffit pour voir la progression en console ; le
+# détail de chaque année est de toute façon dans son propre
+# logs/hebdomadaire_<date>.log (ouvert/fermé par 02_hebdomadaire.R).
+cat("--- Backfill LIME sur tout l'historique (par année) ---\n")
+annee_min <- lubridate::year(meteo_min_date)
+annee_max <- lubridate::year(Sys.Date())
+
+for (.y in annee_min:annee_max) {
+  backfill_start_date <- max(as.Date(paste0(.y, "-01-01")), meteo_min_date)
+  backfill_end_date   <- min(as.Date(paste0(.y, "-12-31")), Sys.Date())
+  force_recompute     <- TRUE
+  # skip_lime NE DOIT PAS être défini ici — on veut LIME calculé pour de vrai
+  cat("=== Backfill LIME — année", .y, ":", format(backfill_start_date), "->",
+      format(backfill_end_date), "===\n")
+  source(here("scripts", "02_hebdomadaire.R"))
+  rm(backfill_start_date, backfill_end_date, force_recompute)
+}
+rm(.y, annee_min, annee_max)

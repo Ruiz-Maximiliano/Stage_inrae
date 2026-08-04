@@ -7,13 +7,14 @@
 # Adapté du code de recherche original (workflow_ruiz.R) pour s'intégrer au
 # pipeline : predict_two_part_uncertainty() est centralisée dans
 # 00_functions_models.R (partagée avec 02_hebdomadaire.R), un 4e RDS est
-# sauvegardé pour servir de background au calcul SHAP, et les chemins de
+# sauvegardé (données d'entraînement de référence), et les chemins de
 # fichiers pointent vers l'arborescence du pipeline (path_models, data/).
 library(tidyverse)
 library(caret)
 library(CAST)
 library(ranger)
 library(correlation)
+library(lime)
 library(here)
 library(logr)
 
@@ -356,6 +357,27 @@ log_print(paste("Performance abondance (global) — Spearman :", round(abundance
                 "| Couverture 90% :", round(abundance_perf$coverage90, 3)))
 
 ###########################
+# 9b. LIME EXPLAINERS (présence + abondance)
+###########################
+# Construits ici (une seule fois, à l'entraînement) plutôt que dans
+# 02_hebdomadaire.R à chaque corrida — lime::lime() discrétise chaque
+# prédicteur en n_bins à partir des données d'entraînement, un calcul qui ne
+# dépend QUE du modèle/jeu d'entraînement, jamais des nouvelles prédictions.
+# Le refaire à chaque run hebdomadaire (comme au tout début de l'intégration
+# LIME) était du travail redondant. Sauvegardés ci-dessous dans les mêmes RDS
+# que les modèles (res_presence$explainer / res_abundance$explainer) —
+# 02_hebdomadaire.R n'a plus qu'à les lire avec readRDS(), comme pour
+# mod_presence/rf_abundance_q.
+explainer_presence <- lime::lime(
+  df_model_presence %>% dplyr::select(dplyr::all_of(predictors_presence)),
+  mod_presence, n_bins = 8
+)
+explainer_abundance <- lime::lime(
+  df_model_abundance %>% dplyr::select(dplyr::all_of(predictors_abundance)),
+  rf_abundance_q, n_bins = 8
+)
+
+###########################
 # 10. SAVE OUTPUTS
 ###########################
 saveRDS(
@@ -377,6 +399,20 @@ saveRDS(
   file.path(path_models, "res_abundance_LOSO_quantile_rf.rds")
 )
 
+# explainer_presence/explainer_abundance : SÉPARÉS des .rds modèle ci-dessus
+# (2026-07-31, demande utilisateur) — fichiers propres explainer_presence.rds/
+# explainer_abundance.rds, plutôt qu'un élément $explainer dans les .rds
+# modèle. Avantage : le modèle et son explainer LIME sont deux concepts
+# distincts, on peut inspecter/charger l'un sans l'autre. Inconvénient
+# accepté : ce sont maintenant 2 fichiers à garder synchronisés — si on
+# réentraîne un modèle SANS relancer ce script en entier (les deux blocs
+# saveRDS() juste au-dessus ET ceux-ci), le modèle et son explainer peuvent
+# diverger silencieusement (LIME expliquerait un modèle qui n'est plus le
+# modèle réellement chargé). Ce script les régénère toujours ensemble, dans
+# le même run — donc pas de risque tant qu'on ne sépare pas leur exécution.
+saveRDS(explainer_presence,  file.path(path_models, "explainer_presence.rds"))
+saveRDS(explainer_abundance, file.path(path_models, "explainer_abundance.rds"))
+
 saveRDS(
   list(
     df_cv_combined = df_cv_combined,
@@ -390,18 +426,16 @@ saveRDS(
   file.path(path_models, "res_two_part_LOSO_uncertainty_combined.rds")
 )
 
-# Jeu de données de référence (background) pour le calcul SHAP dans
-# 02_hebdomadaire.R, qui explique le modèle de présence (forêt de
-# probabilité) via compute_shap()/.shapley_exact() (00_functions_models.R).
-# X_presence est utilisé (res_train$X_presence) ; X_abundance/df_model sont
-# gardés en plus pour un usage futur éventuel (diagnostic, SHAP abondance).
+# Jeu de données d'entraînement de référence, sauvegardé pour un usage
+# diagnostic/exploratoire éventuel (ex. comparer une prédiction récente à la
+# distribution vue à l'entraînement) — n'est plus lu par le pipeline
+# hebdomadaire normal (02_hebdomadaire.R construit ses propres explainers
+# LIME à l'entraînement, voir section 9b ci-dessus).
 X_presence  <- as.data.frame(df_model_presence[, predictors_presence])
 X_abundance <- as.data.frame(df_model_abundance[, predictors_abundance])
 
 # X_combined : les 5 prédicteurs du modèle combiné sur TOUTES les observations
-# d'entraînement (présence+abondance). Utilisé comme background de référence
-# dans le SHAP "absolu" de 02_hebdomadaire.R — mesure l'écart par rapport à la
-# distribution historique entraînée, indépendamment des communes de la semaine courante.
+# d'entraînement (présence+abondance).
 all_pred_combined <- unique(c(predictors_presence, predictors_abundance))
 X_combined  <- as.data.frame(na.omit(df_model[, all_pred_combined]))
 
