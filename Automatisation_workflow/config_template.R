@@ -91,7 +91,7 @@ db_table_meteo <- "meteo"
 # is_forecast), voir config.R pour le détail. Table séparée de db_table_meteo.
 db_table_meteo_grid <- "meteo_grid"
 
-# Table de prédictions publiée chaque semaine (prédictions + valeurs SHAP, fusionnées)
+# Table de prédictions publiée chaque semaine (prédictions + valeurs LIME, fusionnées)
 db_layer <- "albopictus_predictions"
 
 # Vues matérielles — moyenne par commune/semaine sur 10 ans et 2 ans
@@ -100,7 +100,7 @@ db_table_mean_10y <- "mean_10y"
 db_table_mean_2y  <- "mean_2y"
 
 # ============================================================
-# ROI — chargé ici (demande Paul, revue de code) pour ne pas dupliquer ce
+# ROI — chargé ici pour ne pas dupliquer ce
 # bloc dans chaque script. Connexion BD TEMPORAIRE, ouverte et refermée
 # uniquement pour cette lecture — config.R ne garde aucune connexion ouverte.
 # ============================================================
@@ -122,8 +122,7 @@ DBI::dbDisconnect(.con_roi)
 rm(.con_roi)
 
 # geopolygon / roi_info / all_codgeo : dérivés de roi, calculés ici une seule
-# fois (au lieu d'être recalculés dans chaque script — même demande Paul que
-# pour roi lui-même). sf_use_s2(FALSE) requis : st_union/st_make_valid
+# fois (au lieu d'être recalculés dans chaque script). sf_use_s2(FALSE) requis : st_union/st_make_valid
 # échouent sur certaines géométries ROI avec s2 activé (erreur "format non
 # supporté"). Les messages "Spherical geometry switched off/on" et "assumes
 # planar" sont normaux et attendus ici.

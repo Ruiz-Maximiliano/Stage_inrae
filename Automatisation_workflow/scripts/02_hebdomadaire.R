@@ -421,8 +421,8 @@ meteo2 <- meteo %>%
   # et options(datatable.week = "legacy") change en plus son comportement.
   # Résultat, déjà observé en pratique : weekday == 1 signifie LUNDI ou
   # DIMANCHE selon l'état exact de la session R (ordre de chargement des
-  # packages, detach/reload...) — un bug non-reproductible, silencieux, qui a
-  # fait sauter des semaines entières lors d'un backfill (2026-07-31).
+  # packages, detach/reload...) — un bug non-reproductible, silencieux, qui
+  # peut faire sauter des semaines entières lors d'un backfill.
   # week_start = 1 rend le sens de "1" explicite et indépendant de la session.
   mutate(weekday = lubridate::wday(date, week_start = 1)) %>%
   {
@@ -510,7 +510,7 @@ predictors_abundance <- c("TM_0_4", "UM_0_11", "RR_1_5")
 # (00_train_models.R, section 9b) — les reconstruire ici à chaque run serait
 # du travail redondant (lime::lime() ne dépend que des données
 # d'entraînement, jamais des nouvelles prédictions).
-# SÉPARÉS des RDS modèle (2026-07-31, demande utilisateur) : fichiers propres
+# SÉPARÉS des RDS modèle : fichiers propres
 # explainer_presence.rds/explainer_abundance.rds, plutôt qu'un élément
 # $explainer dans res_presence/res_abundance. ATTENTION reproductibilité :
 # si un modèle est réentraîné, ces 2 fichiers doivent l'être aussi (toujours
@@ -549,13 +549,13 @@ df_meteo_predictions <- predict_two_part_uncertainty(
 # add_lime_explanations() (00_functions_models.R) fait ce partitionnement et
 # renvoie les 3 colonnes lime_TM/lime_UM/lime_RR jointes sur (codgeo, date).
 
-# skip_lime : renommé (2026-07-31) depuis skip_shap — dernière trace du nom
-# SHAP dans les scripts actifs, nettoyée. Utilisé pour désactiver LIME sur
-# des milliers de semaines d'un coup (trop lent) lors du chargement
-# historique. En run normal, non défini → LIME calculé. Les anciens scripts
-# 05_backfill_shap.R/06_backfill_shap_por_tramos.R (abandonnés, ne pas
-# relancer) référencent encore skip_shap — volontairement laissés tels
-# quels, ce sont des artefacts figés de la migration SHAP → LIME.
+# skip_lime : utilisé pour désactiver LIME sur des milliers de semaines d'un
+# coup (trop lent) lors du chargement historique. En run normal, non défini
+# → LIME calculé. Les anciens scripts scripts/legacy/05_backfill_shap.R et
+# scripts/legacy/06_backfill_shap_por_tramos.R (abandonnés, archivés, ne pas
+# relancer) référencent encore skip_shap, le nom historique de cette
+# variable (avant la migration SHAP → LIME) — volontairement laissés tels
+# quels, ce sont des artefacts figés.
 if (exists("skip_lime") && isTRUE(skip_lime)) {
   df_meteo_predictions <- df_meteo_predictions %>%
     dplyr::mutate(lime_TM = NA_real_, lime_UM = NA_real_, lime_RR = NA_real_)
@@ -593,17 +593,17 @@ if (exists("skip_lime") && isTRUE(skip_lime)) {
 abundance <- df_meteo_predictions %>%
   # TM_0_8/TM_0_4 : prédicteurs de température déjà calculés plus haut
   # (utilisés par les modèles de présence/abondance) — ajoutés ici tels
-  # quels à la table publiée (demande utilisateur, 2026-07-31), pour
-  # traçabilité/lecture directe des valeurs d'entrée des modèles.
+  # quels à la table publiée, pour traçabilité/lecture directe des valeurs
+  # d'entrée des modèles.
   dplyr::select(codgeo, date, pred_combined_mean, TM_0_8, TM_0_4) %>%
   dplyr::rename(combined_abundance_q50 = pred_combined_mean) %>%
   dplyr::mutate(
     combined_abundance_q50 = round(combined_abundance_q50, 1),
     TM_0_8 = round(TM_0_8, 1),
     TM_0_4 = round(TM_0_4, 1)
-    # BUG corrigé (2026-07-31) : ce bloc faisait "date = date + 1" ici — voir
-    # la note détaillée sur meteo_out plus bas (même bug, l'inverse). "date"
-    # ici est déjà th_date (le vrai lundi), sans décalage à appliquer.
+    # ATTENTION : NE PAS ajouter "date = date + 1" ici — voir la note
+    # détaillée sur meteo_out plus bas (même logique, décalage inverse).
+    # "date" ici est déjà th_date (le vrai lundi), sans décalage à appliquer.
   )
 # Pas de left_join(roi_info) ici — libgeo vient déjà de meteo_out (évite les
 # colonnes communes implicites qui génèrent le warning many-to-many)
@@ -650,8 +650,7 @@ meteo_out <- df_meteo_pieges_summ %>%
     mean_temperature = round(mean_temperature, 1),
     mean_rainfall    = round(mean_rainfall,    1),
     mean_humidity    = round(mean_humidity,    1),
-    # BUG corrigé (2026-07-31, trouvé en investiguant le pendiente #1 — voir
-    # resumen_y_prompt_continuidad.md) : "date" ici vaut th_date - 1 (pas
+    # ATTENTION : "date" ici vaut th_date - 1 (pas
     # th_date), car fun_summarize_week() construit la "semaine 0" à partir
     # des lags JOURNALIERS 1 à 6 seulement (6 jours, pas 7 — lag_n démarre à
     # 1, pas 0, donc floor(7/7)=1 fait basculer le jour lag=7 dans la semaine
@@ -731,8 +730,8 @@ if (all(lime_cols %in% colnames(df_meteo_predictions))) {
     dplyr::select(codgeo, date, dplyr::all_of(lime_cols)) %>%
     dplyr::mutate(
       dplyr::across(dplyr::all_of(lime_cols), ~round(.x, 4))
-      # BUG corrigé (2026-07-31) : "date = date + 1" retiré ici — voir la
-      # note sur meteo_out plus haut. "date" est déjà th_date, sans décalage.
+      # ATTENTION : NE PAS ajouter "date = date + 1" ici — voir la note sur
+      # meteo_out plus haut. "date" est déjà th_date, sans décalage.
     )
 
   albopictus_predictions_final <- albopictus_predictions %>%
@@ -792,13 +791,13 @@ if (dbExistsTable(con, db_layer)) {
     lime_TM             = "DOUBLE PRECISION",
     lime_UM              = "DOUBLE PRECISION",
     lime_RR              = "DOUBLE PRECISION",
-    # TM_0_8/TM_0_4 : prédicteurs de température ajoutés à la table publiée
-    # (demande utilisateur, 2026-07-31) — voir "abundance" plus haut.
+    # TM_0_8/TM_0_4 : prédicteurs de température ajoutés à la table publiée —
+    # voir "abundance" plus haut.
     TM_0_8               = "DOUBLE PRECISION",
     TM_0_4               = "DOUBLE PRECISION",
-    # level : "commune" ou "departement" (demande utilisateur, 2026-07-31) —
-    # vient de roi_info (config.R, admin_levels), rejoint via meteo_out plus
-    # haut (left_join(roi_info, by = "codgeo")), aucun calcul ici.
+    # level : "commune" ou "departement" — vient de roi_info (config.R,
+    # admin_levels), rejoint via meteo_out plus haut (left_join(roi_info,
+    # by = "codgeo")), aucun calcul ici.
     level                = "TEXT"
   )
   for (col in names(colonnes_a_verifier)) {

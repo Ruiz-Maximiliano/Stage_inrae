@@ -23,7 +23,7 @@
 #   5. Prédit avec le modèle COMBINÉ habituel (predict_two_part_uncertainty())
 #      — présence x abondance, exactement comme partout ailleurs dans le
 #      pipeline. Pas de SHAP dans cette version (coûterait ~1.5-2h de plus
-#      pour une table exploratoire — voir 05_backfill_shap.R pour le détail
+#      pour une table exploratoire — voir scripts/legacy/05_backfill_shap.R pour le détail
 #      de ce coût).
 #   6. Publie dans db_layer_seasonal (table de TEST, overwrite = TRUE à chaque
 #      run — un nouveau run remplace entièrement l'ancien forecast saisonnier,
@@ -72,7 +72,10 @@ options(datatable.week = "legacy")
 n_months_seasonal <- 6                      # <-- AJUSTER ICI : horizon en mois (1-9)
 seasonal_model    <- NULL                   # <-- AJUSTER ICI : NULL = défaut API (cfs_v2)
 db_layer_seasonal <- "test_seasonal_ruiz"   # <-- table de TEST, jamais albopictus_ruiz_test
-lag_max           <- 84
+# lag_max : NE PLUS hardcoder ici — vient de config.R (source() plus haut),
+# centralisé pour rester synchronisé avec 01_initialisation.R/02_hebdomadaire.R
+# (un hardcode local ici le ferait diverger silencieusement si lag_max
+# changeait un jour dans config.R).
 
 cat("=== Prédictions saisonnières —", as.character(Sys.time()), "===\n")
 cat("Horizon :", n_months_seasonal, "mois | Table de sortie :", db_layer_seasonal, "\n")
@@ -162,14 +165,27 @@ cat("✓ Agrégé par commune (", nrow(comm_seasonal), "lignes commune x date )\
 
 read_from <- Sys.Date() - lag_max
 cat("Lecture météo réelle récente depuis", format(read_from),
-    "(buffer de", lag_max, "jours pour les lags — meteo_ruiz en lecture seule)...\n")
+    "(buffer de", lag_max, "jours pour les lags)...\n")
 
-meteo_recent <- dbGetQuery(con, sprintf(
-  "SELECT codgeo, date, \"TM\", \"RR\", \"UM\" FROM %s WHERE date >= '%s' AND date < '%s'",
-  db_table_meteo, as.character(read_from), as.character(Sys.Date())
-)) %>% as.data.table()
-meteo_recent$date <- as.Date(meteo_recent$date)
-meteo_recent <- meteo_recent %>% dplyr::distinct(codgeo, date, .keep_all = TRUE)
+# ATTENTION : ce bloc ne doit PAS lire db_table_meteo (meteo_ruiz) pour le
+# buffer "récent" — meteo_ruiz est GELÉE depuis que 02_hebdomadaire.R a migré
+# vers db_table_meteo_grid (voir commentaire db_table_meteo dans config.R),
+# donc "récente" ne le serait plus du tout, toujours figée à la date du gel
+# quelle que soit la date d'exécution de ce script. On lit ici le format
+# grille BRUT à jour (db_table_meteo_grid) et on agrège par commune via
+# aggregate_meteo_to_roi(), exactement comme 02_hebdomadaire.R.
+meteo_recent_grid_brut <- dbGetQuery(con, sprintf(
+  "SELECT * FROM %s WHERE date >= '%s' AND date < '%s'",
+  db_table_meteo_grid, as.character(read_from), as.character(Sys.Date())
+))
+meteo_recent_grid_brut$date <- as.Date(meteo_recent_grid_brut$date)
+meteo_recent_grid_brut <- meteo_recent_grid_brut %>%
+  dplyr::distinct(X, Y, date, .keep_all = TRUE)
+
+meteo_recent <- aggregate_meteo_to_roi(meteo_recent_grid_brut, roi, grid_res) %>%
+  dplyr::select(codgeo, date, TM, RR, UM) %>%
+  as.data.table() %>%
+  dplyr::distinct(codgeo, date, .keep_all = TRUE)
 
 ######################################################
 ######### 3. Série continue : météo réelle récente + forecast saisonnier
@@ -193,7 +209,12 @@ cat("✓ Série continue construite —", nrow(meteo), "lignes (",
 
 meteo2 <- meteo %>%
   dplyr::select(codgeo, date) %>%
-  mutate(year = year(date), week = week(date), weekday = wday(date)) %>%
+  # lubridate::wday() EXPLICITE — voir le commentaire équivalent dans
+  # 02_hebdomadaire.R : wday() nu est ambigu entre lubridate et data.table
+  # (masquage selon l'ordre de chargement des library()), week_start = 1
+  # fixe sans ambiguïté "1" = LUNDI, quelle que soit la session R.
+  mutate(year = year(date), week = week(date),
+         weekday = lubridate::wday(date, week_start = 1)) %>%
   filter(weekday == 1,
          date >= Sys.Date(),
          date <= Sys.Date() + n_months_seasonal * 31) %>%

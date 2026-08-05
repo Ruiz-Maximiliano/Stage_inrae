@@ -73,11 +73,10 @@ source(here("config.R"))
 # script) sans savoir qu'elles viennent d'ailleurs — on nettoie donc ici,
 # avant de commencer, toute variable "optionnelle" que ce script ne contrôle
 # pas lui-même.
-# NOTE (2026-07-31) : skip_shap renommé skip_lime (dernière trace du nom SHAP
-# dans les scripts actifs). shap_max_background/shap_batch_size restent tels
-# quels ici — pas des variables actives, juste un filet de sécurité pour
-# nettoyer ces noms s'ils traînent encore dans une session très ancienne
-# (pré-migration LIME), aucun code actuel ne les définit ni ne les lit.
+# shap_max_background/shap_batch_size restent dans la liste ci-dessous — pas
+# des variables actives, juste un filet de sécurité pour nettoyer ces noms
+# s'ils traînent encore dans une session très ancienne (pré-migration LIME),
+# aucun code actuel ne les définit ni ne les lit.
 .vars_a_nettoyer <- c("backfill_start_date", "backfill_end_date",
                        "init_lookback", "skip_lime",
                        "force_recompute", "init_forecast_done",
@@ -158,8 +157,7 @@ log_print(paste("Chargement de l'historique météo (", n_days_history, "jours, 
 # recul météo complet pour leurs lags (jusqu'à 11 semaines = 77 jours réels,
 # voir fun_summarize_week()). Sans cette marge, les ~6 premières semaines de
 # tout run d'initialisation complet manquent de lags, sont éliminées par
-# na.omit() dans 02_hebdomadaire.R, et publient NULL pour toutes les communes
-# (bug réel rencontré et corrigé le 2026-07-31).
+# na.omit() dans 02_hebdomadaire.R, et publient NULL pour toutes les communes.
 start_date     <- Sys.Date() - n_days_history - lag_max
 end_date       <- Sys.Date() - 1
 expected_dates <- (n_days_history + lag_max) * 0.80
@@ -465,10 +463,9 @@ rm(force_recompute, init_forecast_done)
 # ============================================================
 # Après les Runs 1/2 ci-dessus, l'historique complet a des prédictions
 # (présence/abondance) mais LIME reste en NA sur les années anciennes — Run 1
-# l'a désactivé exprès (skip_lime = TRUE) pour aller vite. Sans ce bloc, il
-# fallait relancer ce backfill à la main après coup (demande utilisateur,
-# 2026-07-31 : "sino no tiene sentido" — intégré ici pour qu'un seul
-# source("01_initialisation.R") suffise à tout avoir, LIME inclus).
+# l'a désactivé exprès (skip_lime = TRUE) pour aller vite. Ce bloc évite
+# d'avoir à relancer ce backfill à la main après coup : un seul
+# source("01_initialisation.R") suffit à tout avoir, LIME inclus.
 #
 # PAR ANNÉE CIVILE (plutôt qu'un seul backfill de tout l'historique d'un
 # coup) : plus gérable en mémoire/temps, et permet de reprendre facilement
