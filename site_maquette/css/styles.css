@@ -1,0 +1,200 @@
+:root {
+  --bg:#f0f4f8; --surface:#ffffff; --surface2:#f8fafc;
+  --border:#e2e8f0; --accent:#1a5490; --accent2:#3b7dd8;
+  --text:#1e293b; --text-muted:#64748b;
+  --ok:#4caf50; --warn:#ff9800; --danger:#e53935;
+  --font-mono:'Space Mono',monospace; --font-body:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);height:100vh;overflow:hidden;display:grid;grid-template-rows:56px 1fr;grid-template-columns:280px 1fr 340px}
+ 
+/* HEADER */
+header{grid-column:1/-1;background:#1a5490;border-bottom:none;display:flex;align-items:center;padding:0 20px;gap:16px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.logo{font-family:var(--font-mono);font-size:12px;color:#fff;letter-spacing:2px;text-transform:uppercase;white-space:nowrap}
+.logo span{color:rgba(255,255,255,.5)}
+.header-badge{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:4px 12px;font-family:var(--font-mono);font-size:10px;color:#fff;letter-spacing:1px}
+.header-kpis{display:flex;gap:0;margin-left:auto;align-items:stretch}
+.hkpi{border-left:1px solid rgba(255,255,255,.2);padding:0 18px;display:flex;flex-direction:column;justify-content:center}
+.hkpi .lbl{font-size:9px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:1px;font-family:var(--font-mono)}
+.hkpi .val{font-family:var(--font-mono);font-size:14px;color:#fff;margin-top:1px}
+.hkpi .val.warn{color:#ffd54f}
+.hkpi .val.danger{color:#ff8a80}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#4caf50;box-shadow:0 0 8px #4caf50;animation:pulse 2s infinite;margin-left:10px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+ 
+/* PANELS */
+.panel-left{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
+.panel-right{background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+ 
+/* MAP */
+#map{width:100%;height:100%;background:#e8ecf0}
+ 
+/* SHARED */
+.section-label{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px}
+.box{background:var(--surface2);border-radius:10px;padding:12px;border:1px solid var(--border)}
+.chart-box{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px}
+.chart-wrap{position:relative}
+.chart-wrap canvas{position:absolute;top:0;left:0;width:100%!important;height:100%!important}
+.chart-title{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.chart-title .badge{background:rgba(26,84,144,.12);color:var(--accent);border-radius:4px;padding:1px 6px;font-size:9px}
+.chart-expand-btn{margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:13px;line-height:1;padding:0 2px;transition:color .15s;opacity:.6}
+.chart-expand-btn:hover{color:var(--accent);opacity:1}
+ 
+/* CHART MODAL */
+#chart-modal{position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.82);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center}
+#chart-modal.hidden{display:none}
+#chart-modal-inner{background:var(--surface);border-radius:14px;padding:20px;box-shadow:0 8px 40px rgba(0,0,0,.35);max-width:90vw;max-height:88vh;display:flex;flex-direction:column;gap:12px;min-width:480px}
+#chart-modal-header{display:flex;align-items:center;justify-content:space-between}
+#chart-modal-title{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}
+#chart-modal-close{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;color:var(--text-muted);transition:all .15s}
+#chart-modal-close:hover{border-color:var(--danger);color:var(--danger)}
+#chart-modal-canvas-wrap{flex:1;overflow:hidden;border-radius:8px;background:var(--surface2);border:1px solid var(--border)}
+#chart-modal-canvas-wrap canvas{width:100%!important;height:100%!important}
+
+/* COMMUNE WEEKLY MODAL — plus un bandeau flottant par-dessus la carte
+   (l'ancien position:fixed + pointer-events:none/auto recouvrait visuellement
+   le bas de la carte, même si on pouvait encore cliquer "à travers" en
+   dehors du panneau). BUG CORRIGÉ (demande utilisateur : "que no se
+   superponga el mapa") — participe maintenant à LA GRILLE de la page : une
+   3e ligne est ajoutée dynamiquement (voir body.cw-modal-open, activée/
+   désactivée par openCommuneWeeklyModal/openDeptWeeklyModal/
+   closeCommuneWeeklyModal dans commune-modal.js), donc la carte RÉTRÉCIT
+   pour lui faire de la place au lieu d'être recouverte. Plus grand qu'avant
+   (30vh → 42vh) pour la ligne de température/légende en plus, avec scroll
+   vertical interne (overflow-y:auto) en filet de sécurité si ça déborde
+   quand même sur un petit écran — en plus du scroll horizontal déjà
+   existant sur le canvas seul (#cw-canvas-wrap, vue élargie saisonnière). */
+body.cw-modal-open{grid-template-rows:56px 1fr 42vh}
+#commune-weekly-modal{grid-column:1/-1;display:flex;min-height:0}
+#commune-weekly-modal.hidden{display:none}
+#cw-modal-inner{width:100%;background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -10px 30px rgba(0,0,0,.25);padding:12px 20px 14px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;min-height:0}
+#cw-modal-header{display:flex;align-items:center;justify-content:space-between}
+#cw-modal-title{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}
+#cw-modal-close{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;color:var(--text-muted);transition:all .15s}
+#cw-modal-close:hover{border-color:var(--danger);color:var(--danger)}
+#cw-canvas-wrap{flex:1;min-height:0;margin-top:22px;overflow-x:auto;overflow-y:hidden}
+/* #cw-canvas-inner porte le "position:relative" (repère du badge #cw-today-badge)
+   ET la largeur explicite en mode "vue élargie" — en mode compact (défaut),
+   width:100% ne change rien au comportement d'avant (pas de scroll). */
+#cw-canvas-inner{position:relative;height:100%;width:100%}
+#cw-canvas-inner canvas{width:100%!important;height:100%!important}
+#cw-widen-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(26,84,144,.1)}
+/* Badge "Aujourd'hui" — vrai élément HTML positionné au-dessus du canvas
+   (bottom:100% = collé au bord haut du wrapper, quelle que soit sa propre
+   hauteur), plutôt qu'un label dessiné dans le canvas : ça évite tous les
+   soucis de clipping/padding internes à Chart.js, et la série temporelle
+   garde sa taille normale (le canvas n'est plus rétréci pour lui faire de
+   la place). */
+.cw-today-badge{position:absolute;bottom:100%;margin-bottom:4px;transform:translateX(-50%);background:#e53935;color:#fff;font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:50;box-shadow:0 2px 6px rgba(0,0,0,.25);display:none}
+
+/* Chips de communes sélectionnées (zone de rapport), avec bouton de retrait */
+.zr-chip{display:inline-flex;align-items:center;gap:2px;background:rgba(26,84,144,.1);color:var(--accent);border-radius:5px;padding:2px 6px;font-size:10px}
+ 
+/* KPI GRID */
+.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 10px 8px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi-card.blue::before{background:var(--accent)}
+.kpi-card.purple::before{background:var(--accent2)}
+.kpi-card.green::before{background:var(--ok)}
+.kpi-card.orange::before{background:var(--warn)}
+.kpi-card .kv{font-family:var(--font-mono);font-size:18px;color:var(--text);margin-bottom:2px}
+.kpi-card .kv.blue{color:var(--accent)}
+.kpi-card .kv.purple{color:var(--accent2)}
+.kpi-card .kv.green{color:var(--ok)}
+.kpi-card .kv.orange{color:var(--warn)}
+.kpi-card .kl{font-size:10px;color:var(--text-muted)}
+.kpi-card .kdelta{font-size:9px;font-family:var(--font-mono);margin-top:4px}
+.kdelta.up{color:var(--danger)} .kdelta.down{color:var(--ok)} .kdelta.neutral{color:var(--text-muted)}
+ 
+/* RISK METER */
+.risk-meter{display:flex;gap:4px;margin-top:8px}
+.risk-bar{flex:1;height:6px;border-radius:3px;background:var(--border)}
+.risk-bar.active-low{background:var(--ok)}
+.risk-bar.active-med{background:var(--warn)}
+.risk-bar.active-high{background:#f97316}
+.risk-bar.active-vhigh{background:var(--danger)}
+.risk-label{font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-align:right;margin-top:3px}
+ 
+/* VAR BUTTONS */
+.var-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.var-btn{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 6px;cursor:pointer;transition:all .2s;text-align:center;color:var(--text-muted);font-family:var(--font-body);font-size:11px}
+.var-btn:hover{border-color:var(--accent);color:var(--text)}
+.var-btn.active{background:rgba(26,84,144,.1);border-color:var(--accent);color:var(--accent);font-weight:600}
+.var-btn .icon{font-size:16px;display:block;margin-bottom:3px}
+ 
+/* TIME CONTROLS */
+.time-display{font-family:var(--font-mono);font-size:13px;color:var(--accent);margin-bottom:8px;text-align:center}
+.time-display small{display:block;font-size:9px;color:var(--text-muted);margin-top:2px}
+input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;height:4px}
+.time-nav{display:flex;justify-content:space-between;margin-top:8px;gap:6px}
+.btn{background:var(--surface);border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:5px 10px;cursor:pointer;font-family:var(--font-mono);font-size:10px;transition:all .2s;flex:1;text-align:center}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+ 
+/* LEGEND */
+.legend-bar{border-radius:8px;height:10px;margin-bottom:5px}
+.legend-labels{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9px;color:var(--text-muted)}
+ 
+/* DEP RANKING */
+.dep-rank{display:flex;flex-direction:column;gap:5px;margin-top:4px}
+.dep-row{display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--surface);border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:all .2s}
+.dep-row:hover{border-color:var(--accent)}
+.dep-row .dep-rank-num{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);width:16px}
+.dep-row .dep-name{font-size:11px;color:var(--text);flex:1}
+.dep-row .dep-val{font-family:var(--font-mono);font-size:11px;color:var(--accent);font-weight:700}
+.dep-row .dep-bar-wrap{width:60px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.dep-row .dep-bar-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .4s}
+ 
+/* ALERT BOX */
+.alert-list{display:flex;flex-direction:column;gap:5px}
+.alert-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;border:1px solid;font-size:11px}
+.alert-item.high{background:#ffebee;border-color:#ffcdd2;color:#b71c1c}
+.alert-item.med{background:#fff3e0;border-color:#ffe0b2;color:#e65100}
+.alert-item.low{background:#e8f5e9;border-color:#c8e6c9;color:#2e7d32}
+.alert-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.alert-item.high .alert-dot{background:var(--danger)}
+.alert-item.med .alert-dot{background:var(--warn)}
+.alert-item.low .alert-dot{background:var(--ok)}
+ 
+/* LOADING / ERROR */
+#loading{position:fixed;inset:0;background:rgba(240,244,248,.92);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column;gap:20px}
+.loader{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-family:var(--font-mono);font-size:12px;color:var(--text-muted);text-align:center;max-width:320px;line-height:1.8}
+.error-box{background:#fff3f3;border:1px solid #ffcdd2;border-radius:10px;padding:20px;font-family:var(--font-mono);font-size:11px;color:var(--danger);text-align:center;line-height:2;max-width:360px}
+ 
+/* MAP OVERRIDES */
+.leaflet-container{background:#e8ecf0 !important}
+.leaflet-tile{filter:none}
+.info-popup{background:#fff !important;border:1px solid var(--border) !important;border-radius:10px !important;color:var(--text) !important;font-family:var(--font-body) !important;box-shadow:0 4px 16px rgba(0,0,0,.12) !important;padding:12px !important}
+.popup-title{font-family:var(--font-mono);color:var(--accent);font-size:12px;margin-bottom:6px;font-weight:700}
+.popup-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);padding:3px 0;border-bottom:1px solid var(--border)}
+.popup-row:last-child{border:none}
+.popup-row strong{color:var(--text)}
+.leaflet-popup-content-wrapper{background:transparent !important;box-shadow:none !important;padding:0 !important}
+.leaflet-popup-tip{background:#fff !important}
+.leaflet-popup-content{margin:0 !important}
+ 
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+ 
+/* TAB SYSTEM */
+.tabs{display:flex;gap:4px;margin-bottom:10px}
+.tab{font-family:var(--font-mono);font-size:9px;padding:4px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;color:var(--text-muted);transition:all .2s;background:var(--surface)}
+.tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+ 
+/* SCATTER overlay label */
+.bivar-legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+.bivar-item{display:flex;align-items:center;gap:4px;font-size:9px;color:var(--text-muted);font-family:var(--font-mono)}
+.bivar-dot{width:8px;height:8px;border-radius:50%}
+ 
+/* SPARKLINE mini */
+.sparkline-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+.sparkline-row:last-child{border:none}
+.sparkline-row .sp-name{font-size:10px;width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.sparkline-row .sp-val{font-family:var(--font-mono);font-size:10px;color:var(--accent);width:50px;text-align:right}
+.sparkline-row canvas{flex:1}

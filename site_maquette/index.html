@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OMEES — Tableau de Bord Régional Élus</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="assets/css/responsive.css"/>
+<link rel="stylesheet" href="css/styles.css?v=1786618898"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Turf.js : fusionne (dissolve) les polygones communaux en un seul polygone
+     par département pour le mode carte "Département" (voir ensureDepartmentGeoJSON) -->
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<!-- jsPDF + autoTable : export PDF du rapport de la commune sélectionnée (voir generateCommuneReport) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+ 
+<div id="loading">
+  <div class="loader"></div>
+  <div class="loading-text" id="loading-text">Connexion au GeoServer INRAE...</div>
+</div>
+ 
+<header>
+  <div class="logo">Météo Moustique : Prévisions de l'activité du moustique tigre dans l'Hérault</div>
+  <div class="header-badge">📊 TABLEAU DE BORD RÉGIONAL</div>
+  <div class="status-dot"></div>
+</header>
+ 
+<!-- LEFT PANEL -->
+<div class="panel-left">
+  <!-- Variable -->
+  <div>
+    <div class="section-label">Variable cartographiée</div>
+    <div class="var-grid">
+      <button class="var-btn active" data-var="abundance" onclick="setVar(this)"><span class="icon">🦟</span>Activity Index</button>
+      <button class="var-btn" data-var="trend" onclick="setVar(this)"><span class="icon">📈</span>Tendance</button>
+    </div>
+  </div>
+
+  <!-- Échelle géographique : communes individuelles, ou moyenne par département
+       (mêmes polygones communaux, coloriés avec la moyenne de leur département —
+       pas de fond de carte départemental séparé). -->
+  <div>
+    <div class="section-label">Échelle géographique</div>
+    <div class="var-grid">
+      <button class="var-btn active" id="scope-btn-commune" onclick="setMapScope('commune', this)"><span class="icon">🏘️</span>Commune</button>
+      <button class="var-btn" id="scope-btn-department" onclick="setMapScope('department', this)"><span class="icon">🗺️</span>Département</button>
+    </div>
+  </div>
+
+  <!-- Recherche de commune : filtre par nom, ouvre son profil hebdomadaire et
+       zoome dessus au clic — alternative au clic direct sur la carte, pour
+       trouver une commune sans devoir la repérer visuellement. -->
+  <div style="position:relative">
+    <div class="section-label">Rechercher une commune</div>
+    <input type="text" id="commune-search-input" placeholder="Nom de la commune..." autocomplete="off"
+           oninput="onCommuneSearchInput(this.value)"
+           style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:6px;border:1px solid var(--border);font-family:var(--font-mono);font-size:12px;background:var(--surface);color:var(--text)">
+    <div id="commune-search-results" style="display:none;position:absolute;left:0;right:0;z-index:1200;max-height:180px;overflow-y:auto;margin-top:2px;border:1px solid var(--border);border-radius:6px;background:var(--surface);box-shadow:0 6px 16px rgba(0,0,0,.15)"></div>
+  </div>
+
+
+  <!-- Temps -->
+  <div class="box">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="section-label">Navigation temporelle</div>
+      <button id="time-scale-btn" onclick="toggleTimeScale()" style="font-family:var(--font-mono);font-size:9px;padding:3px 10px;border-radius:5px;border:1px solid var(--accent);background:rgba(26,84,144,.1);color:var(--accent);cursor:pointer" title="Basculer semaine / mois / saisonnier (test)">🗓️ Semaine</button>
+    </div>
+    <div class="time-display">
+      <span id="current-date">—</span>
+      <small id="week-info">— / —</small>
+    </div>
+    <input type="range" id="time-slider" min="0" value="0" step="1" oninput="onSlider(this.value)">
+    <div class="time-nav">
+      <button class="btn" onclick="prevWeek()">◀ Préc</button>
+      <button class="btn active" id="play-btn" onclick="togglePlay()">▶ Play</button>
+      <button class="btn" onclick="nextWeek()">Suiv ▶</button>
+    </div>
+    <button class="btn" style="width:100%;margin-top:6px" onclick="jumpToToday()" title="Revenir à la semaine/mois actuel">⏺ Aujourd'hui</button>
+  </div>
+
+  <!-- Commune sélectionnée / rapport — un click normal sur une commune (celui
+       qui ouvre déjà son profil hebdomadaire) la sélectionne aussi pour le
+       rapport (contour jaune sur la carte, remplace toute sélection
+       précédente — pas de mode à activer, pas de multi-sélection). -->
+  <div class="box">
+    <div class="section-label">Commune sélectionnée — rapport</div>
+    <div id="zr-status" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:8px">Aucune commune sélectionnée — cliquez une commune sur la carte</div>
+    <button class="btn active" id="zr-report-pdf-btn" style="width:100%" onclick="generateCommuneReport('pdf')" title="Télécharger le rapport PDF de la commune sélectionnée" disabled>🧾 Générer le rapport (PDF)</button>
+  </div>
+
+  <!-- Légende -->
+  <div>
+    <div class="section-label">Légende — <span id="legend-label">Activity Index</span>
+      <span title="L'Activity Index (0-100%) estime le niveau d'activité du moustique tigre dans la commune, par rapport au maximum d'abondance jamais observé dans toute la région (l'Hérault) — 100% = le pic régional le plus élevé enregistré, 0% = aucune activité." style="cursor:help;opacity:.7;font-weight:700">ⓘ</span>
+    </div>
+    <div class="legend-bar" id="legend-bar"></div>
+    <div class="legend-labels">
+      <span id="leg-min">0</span><span id="leg-mid">—</span><span id="leg-max">max</span>
+    </div>
+  </div>
+ 
+  <!-- Niveau de risque -->
+  <div class="box">
+    <div class="section-label">Niveau de risque vecteur</div>
+    <div class="risk-meter" id="risk-meter">
+      <div class="risk-bar"></div><div class="risk-bar"></div>
+      <div class="risk-bar"></div><div class="risk-bar"></div>
+    </div>
+    <div class="risk-label" id="risk-label">—</div>
+  </div>
+</div>
+ 
+<!-- MAP -->
+<div id="map"></div>
+ 
+<!-- RIGHT PANEL — simplifié : juste le LIME (+ explication seuils TM_0_4/TM_0_8)
+     plus de pestañas (Classement/Tendances/Alertes retirés). Le graphique
+     répond maintenant à la sélection de commune sur la carte (currentModalCodgeo,
+     voir openCommuneWeeklyModal) au lieu d'un click sur un scatter plot
+     (les scatters sont retirés aussi). -->
+<div class="panel-right">
+  <div class="chart-box">
+    <div class="chart-title">🧠 Comment la météo façonne cette prédiction ?</div>
+    <div id="lime-scope-label" style="font-family:var(--font-mono);font-size:9px;color:var(--accent);margin-bottom:4px;cursor:default"></div>
+    <div class="chart-wrap" style="height:220px"><canvas id="chart-shap"></canvas></div>
+    <div id="lime-empty-msg" style="display:none;height:220px;align-items:center;justify-content:center;text-align:center;opacity:.6;font-size:12px;padding:0 10px">Pas de contribution disponible pour cette période — disponible seulement sur les semaines avec une prédiction du modèle (pas sur les données réelles/observées).</div>
+    <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);margin-top:8px;line-height:1.6">
+      <span style="color:var(--danger)">■</span> effet positif &nbsp; <span style="color:var(--accent2)">■</span> effet négatif
+    </div>
+  </div>
+
+  <div class="chart-box" style="margin-top:10px">
+    <div class="chart-title">🌡️ Pourquoi cette prédiction ?</div>
+    <div id="tm-explanation" style="font-family:var(--font-mono);font-size:10px;color:var(--text);line-height:1.7"></div>
+  </div>
+
+  <div class="chart-box" style="margin-top:10px">
+    <div class="chart-title">ℹ️ À propos de cette application</div>
+    <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-muted);line-height:1.8">
+      Cette application propose une météo du moustique tigre (Aedes albopictus) en visualisant, pour chaque commune de l'Hérault, un indice d'activité du moustique tigre pour l'année en cours. Cet indice est estimé à partir de l'abondance attendue des œufs de moustique, elle-même modélisée en fonction des conditions météorologiques. Les prévisions sont générées à l'aide de modèles d'intelligence artificielle et sont mises à jour chaque semaine avec les dernières prévisions météorologiques disponibles.
+    </div>
+  </div>
+</div>
+ 
+<!-- CHART MODAL -->
+<div id="chart-modal" class="hidden">
+  <div id="chart-modal-inner">
+    <div id="chart-modal-header">
+      <span id="chart-modal-title">Graphique</span>
+      <button id="chart-modal-close" onclick="closeChartModal()">✕ Fermer</button>
+    </div>
+    <div id="chart-modal-canvas-wrap" style="height:65vh">
+      <canvas id="chart-modal-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL COMMUNE — profil hebdomadaire vs moyennes historiques -->
+<div id="commune-weekly-modal" class="hidden">
+  <div id="cw-modal-inner">
+    <div id="cw-modal-header">
+      <span id="cw-modal-title">Profil hebdomadaire — <span id="cw-commune-name">—</span></span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="cw-modal-close" onclick="closeCommuneWeeklyModal()">✕ Fermer</button>
+      </div>
+    </div>
+    <div id="cw-legend" style="display:flex;gap:16px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);flex-wrap:wrap;align-items:center">
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" checked data-ds="0" onchange="toggleDatasetVisibility(this)">
+        <span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px"></span>Année en cours (réel)
+      </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" data-ds="1" onchange="toggleDatasetVisibility(this)">
+        <span style="display:inline-block;width:8px;height:8px;background:#0891b2;border-radius:50%"></span>Moyenne 2 ans
+      </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" data-ds="2" onchange="toggleDatasetVisibility(this)">
+        <span style="display:inline-block;width:8px;height:8px;background:#7c3aed;border-radius:50%"></span>Moyenne 10 ans
+      </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" data-ds="3" onchange="toggleDatasetVisibility(this)">
+        <span style="display:inline-block;width:10px;height:2px;background:#f97316;border-top:1px dotted #f97316"></span>Température
+      </label>
+      <!-- "Prévision" regroupé avec "Prévision saisonnière" (même thème :
+           tout ce qui est projeté dans le futur), à droite du bloc données
+           réelles/moyennes historiques.
+           BUG CORRIGÉ — pointait avant vers le même dataset (data-ds="0") que
+           "Année en cours", donc la décocher masquait TOUTE la ligne au lieu
+           de juste le tronçon prévision. Case indépendante maintenant (pas de
+           data-ds, id dédié) : voir toggleForecastVisibility() dans
+           commune-chart.js. -->
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px;margin-left:auto">
+        <input type="checkbox" checked id="cw-forecast-toggle" onchange="toggleForecastVisibility(this)">
+        <span style="display:inline-block;width:10px;height:2px;background:var(--accent);border-top:2px dashed var(--accent)"></span>Prévision
+      </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" id="cw-seasonal-toggle" onchange="onSeasonalToggle()">
+        Prévision saisonnière (test, 6 mois)
+      </label>
+    </div>
+    <div id="cw-seasonal-note" style="display:none;font-family:var(--font-mono);font-size:9px;color:var(--text-muted);font-style:italic"></div>
+    <!-- Rappel que les bandeaux de couleur du graphique sont cliquables — les
+         bandes "risque réel" n'avaient avant aucun contour, rien ne signalait
+         qu'on pouvait cliquer dessus (voir aussi le contour renforcé sur les
+         bandes elles-mêmes, commune-chart.js/buildRiskBandAnnotations). -->
+    <div id="cw-band-hint" style="font-family:var(--font-mono);font-size:10px;color:var(--accent);font-weight:600">💡 Cliquez sur les bandeaux de couleurs pour afficher des propositions sur les actions à mettre en œuvre.</div>
+    <div id="cw-status" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)"></div>
+    <div id="cw-canvas-wrap">
+      <div id="cw-canvas-inner">
+        <div id="cw-today-badge" class="cw-today-badge"></div>
+        <canvas id="chart-commune-weekly"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+ 
+ 
+<!--
+  JS scindé en plusieurs fichiers (voir js/) au lieu d'un unique <script> de
+  2000+ lignes — un fichier par domaine (config/utils/état/API/carte/
+  navigation temporelle/panneau droit/graphique commune/modals/rapport).
+  L'ORDRE compte : main.js doit être chargé EN DERNIER, il démarre le
+  dashboard (initMap()+initDashboard()) une fois que tout le reste est défini.
+-->
+<script src="js/config.js?v=1786618898"></script>
+<script src="js/utils.js?v=1786618898"></script>
+<script src="js/state.js?v=1786618898"></script>
+<script src="js/api.js?v=1786618898"></script>
+<script src="js/map.js?v=1786618898"></script>
+<script src="js/data-loader.js?v=1786618898"></script>
+<script src="js/right-panel.js?v=1786618898"></script>
+<script src="js/chart-modal.js?v=1786618898"></script>
+<script src="js/commune-chart.js?v=1786618898"></script>
+<script src="js/commune-modal.js?v=1786618898"></script>
+<script src="js/report.js?v=1786618898"></script>
+<script src="js/main.js?v=1786618898"></script>
+</body>
+</html>

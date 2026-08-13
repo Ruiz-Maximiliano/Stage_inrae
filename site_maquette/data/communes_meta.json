@@ -1,0 +1,2403 @@
+[
+{
+"codgeo": "34",
+"libgeo": "Hérault",
+"dep": "34",
+"population": null,
+"superficie_km2": 6231.070351961152
+},
+{
+"codgeo": "34001",
+"libgeo": "Abeilhan",
+"dep": "34",
+"population": 1824.0,
+"superficie_km2": 7.9215857213116205
+},
+{
+"codgeo": "34002",
+"libgeo": "Adissan",
+"dep": "34",
+"population": 1347.0,
+"superficie_km2": 4.462290596598594
+},
+{
+"codgeo": "34003",
+"libgeo": "Agde",
+"dep": "34",
+"population": 29612.0,
+"superficie_km2": 49.53297805520536
+},
+{
+"codgeo": "34004",
+"libgeo": "Agel",
+"dep": "34",
+"population": 244.0,
+"superficie_km2": 12.19134368580553
+},
+{
+"codgeo": "34005",
+"libgeo": "Agonès",
+"dep": "34",
+"population": 312.0,
+"superficie_km2": 4.150256729940408
+},
+{
+"codgeo": "34006",
+"libgeo": "Aigne",
+"dep": "34",
+"population": 294.0,
+"superficie_km2": 11.046437274398215
+},
+{
+"codgeo": "34007",
+"libgeo": "Aigues-Vives",
+"dep": "34",
+"population": 472.0,
+"superficie_km2": 12.615142410159452
+},
+{
+"codgeo": "34008",
+"libgeo": "Les Aires",
+"dep": "34",
+"population": 613.0,
+"superficie_km2": 20.74932376756596
+},
+{
+"codgeo": "34009",
+"libgeo": "Alignan-du-Vent",
+"dep": "34",
+"population": 1761.0,
+"superficie_km2": 17.38977632848996
+},
+{
+"codgeo": "34010",
+"libgeo": "Aniane",
+"dep": "34",
+"population": 2956.0,
+"superficie_km2": 30.481299037723545
+},
+{
+"codgeo": "34011",
+"libgeo": "Arboras",
+"dep": "34",
+"population": 104.0,
+"superficie_km2": 6.670587795240597
+},
+{
+"codgeo": "34012",
+"libgeo": "Argelliers",
+"dep": "34",
+"population": 971.0,
+"superficie_km2": 50.40468721178768
+},
+{
+"codgeo": "34013",
+"libgeo": "Aspiran",
+"dep": "34",
+"population": 1682.0,
+"superficie_km2": 16.396967086136833
+},
+{
+"codgeo": "34014",
+"libgeo": "Assas",
+"dep": "34",
+"population": 1430.0,
+"superficie_km2": 19.315541044229654
+},
+{
+"codgeo": "34015",
+"libgeo": "Assignan",
+"dep": "34",
+"population": 168.0,
+"superficie_km2": 8.267040736001821
+},
+{
+"codgeo": "34016",
+"libgeo": "Aumelas",
+"dep": "34",
+"population": 582.0,
+"superficie_km2": 58.2843933463668
+},
+{
+"codgeo": "34017",
+"libgeo": "Aumes",
+"dep": "34",
+"population": 502.0,
+"superficie_km2": 7.3803487962362775
+},
+{
+"codgeo": "34018",
+"libgeo": "Autignac",
+"dep": "34",
+"population": 962.0,
+"superficie_km2": 11.410846412394221
+},
+{
+"codgeo": "34019",
+"libgeo": "Avène",
+"dep": "34",
+"population": 294.0,
+"superficie_km2": 62.566452150067505
+},
+{
+"codgeo": "34020",
+"libgeo": "Azillanet",
+"dep": "34",
+"population": 353.0,
+"superficie_km2": 14.388887320612616
+},
+{
+"codgeo": "34021",
+"libgeo": "Babeau-Bouldoux",
+"dep": "34",
+"population": 309.0,
+"superficie_km2": 21.347087819559164
+},
+{
+"codgeo": "34022",
+"libgeo": "Baillargues",
+"dep": "34",
+"population": 7793.0,
+"superficie_km2": 7.775961320898064
+},
+{
+"codgeo": "34023",
+"libgeo": "Balaruc-les-Bains",
+"dep": "34",
+"population": 7136.0,
+"superficie_km2": 8.752885202766075
+},
+{
+"codgeo": "34024",
+"libgeo": "Balaruc-le-Vieux",
+"dep": "34",
+"population": 2749.0,
+"superficie_km2": 6.903478526628317
+},
+{
+"codgeo": "34025",
+"libgeo": "Bassan",
+"dep": "34",
+"population": 2353.0,
+"superficie_km2": 6.824696422278048
+},
+{
+"codgeo": "34026",
+"libgeo": "Beaufort",
+"dep": "34",
+"population": 215.0,
+"superficie_km2": 6.092035745779863
+},
+{
+"codgeo": "34027",
+"libgeo": "Beaulieu",
+"dep": "34",
+"population": 2239.0,
+"superficie_km2": 7.8608293750446565
+},
+{
+"codgeo": "34028",
+"libgeo": "Bédarieux",
+"dep": "34",
+"population": 5820.0,
+"superficie_km2": 28.049343184076744
+},
+{
+"codgeo": "34029",
+"libgeo": "Bélarga",
+"dep": "34",
+"population": 662.0,
+"superficie_km2": 4.221947155503987
+},
+{
+"codgeo": "34030",
+"libgeo": "Berlou",
+"dep": "34",
+"population": 222.0,
+"superficie_km2": 11.394367929682714
+},
+{
+"codgeo": "34031",
+"libgeo": "Bessan",
+"dep": "34",
+"population": 5705.0,
+"superficie_km2": 27.662446977344437
+},
+{
+"codgeo": "34032",
+"libgeo": "Béziers",
+"dep": "34",
+"population": 80815.0,
+"superficie_km2": 95.80809045118649
+},
+{
+"codgeo": "34033",
+"libgeo": "Boisseron",
+"dep": "34",
+"population": 2178.0,
+"superficie_km2": 7.498973241411289
+},
+{
+"codgeo": "34034",
+"libgeo": "Boisset",
+"dep": "34",
+"population": 41.0,
+"superficie_km2": 17.34632367846464
+},
+{
+"codgeo": "34035",
+"libgeo": "La Boissière",
+"dep": "34",
+"population": 1054.0,
+"superficie_km2": 24.46340357017802
+},
+{
+"codgeo": "34036",
+"libgeo": "Le Bosc",
+"dep": "34",
+"population": 1406.0,
+"superficie_km2": 28.34894727191587
+},
+{
+"codgeo": "34037",
+"libgeo": "Boujan-sur-Libron",
+"dep": "34",
+"population": 3536.0,
+"superficie_km2": 6.98930073392136
+},
+{
+"codgeo": "34038",
+"libgeo": "Le Bousquet-d'Orb",
+"dep": "34",
+"population": 1594.0,
+"superficie_km2": 11.891688022121988
+},
+{
+"codgeo": "34039",
+"libgeo": "Bouzigues",
+"dep": "34",
+"population": 1613.0,
+"superficie_km2": 6.503559418848123
+},
+{
+"codgeo": "34040",
+"libgeo": "Brenas",
+"dep": "34",
+"population": 57.0,
+"superficie_km2": 10.530343574114978
+},
+{
+"codgeo": "34041",
+"libgeo": "Brignac",
+"dep": "34",
+"population": 971.0,
+"superficie_km2": 4.682957852549484
+},
+{
+"codgeo": "34042",
+"libgeo": "Brissac",
+"dep": "34",
+"population": 592.0,
+"superficie_km2": 44.167981218739385
+},
+{
+"codgeo": "34043",
+"libgeo": "Buzignargues",
+"dep": "34",
+"population": 373.0,
+"superficie_km2": 4.532046927945859
+},
+{
+"codgeo": "34044",
+"libgeo": "Cabrerolles",
+"dep": "34",
+"population": 338.0,
+"superficie_km2": 28.530236369651757
+},
+{
+"codgeo": "34045",
+"libgeo": "Cabrières",
+"dep": "34",
+"population": 556.0,
+"superficie_km2": 28.902717127504104
+},
+{
+"codgeo": "34046",
+"libgeo": "Cambon-et-Salvergues",
+"dep": "34",
+"population": 51.0,
+"superficie_km2": 49.906722421276754
+},
+{
+"codgeo": "34047",
+"libgeo": "Campagnan",
+"dep": "34",
+"population": 719.0,
+"superficie_km2": 3.7662745584906987
+},
+{
+"codgeo": "34048",
+"libgeo": "Campagne",
+"dep": "34",
+"population": 311.0,
+"superficie_km2": 4.8406510008638195
+},
+{
+"codgeo": "34049",
+"libgeo": "Camplong",
+"dep": "34",
+"population": 217.0,
+"superficie_km2": 13.000413977751657
+},
+{
+"codgeo": "34050",
+"libgeo": "Candillargues",
+"dep": "34",
+"population": 2102.0,
+"superficie_km2": 8.39677977593318
+},
+{
+"codgeo": "34051",
+"libgeo": "Canet",
+"dep": "34",
+"population": 3600.0,
+"superficie_km2": 7.442936085027007
+},
+{
+"codgeo": "34052",
+"libgeo": "Capestang",
+"dep": "34",
+"population": 3413.0,
+"superficie_km2": 40.60156306244881
+},
+{
+"codgeo": "34053",
+"libgeo": "Carlencas-et-Levas",
+"dep": "34",
+"population": 115.0,
+"superficie_km2": 10.842119561543086
+},
+{
+"codgeo": "34054",
+"libgeo": "Cassagnoles",
+"dep": "34",
+"population": 109.0,
+"superficie_km2": 24.085275257217766
+},
+{
+"codgeo": "34055",
+"libgeo": "Castanet-le-Haut",
+"dep": "34",
+"population": 224.0,
+"superficie_km2": 27.4902610163779
+},
+{
+"codgeo": "34056",
+"libgeo": "Castelnau-de-Guers",
+"dep": "34",
+"population": 1199.0,
+"superficie_km2": 22.64690228361316
+},
+{
+"codgeo": "34057",
+"libgeo": "Castelnau-le-Lez",
+"dep": "34",
+"population": 25404.0,
+"superficie_km2": 11.181617566053468
+},
+{
+"codgeo": "34058",
+"libgeo": "Castries",
+"dep": "34",
+"population": 6722.0,
+"superficie_km2": 24.109799571860332
+},
+{
+"codgeo": "34059",
+"libgeo": "La Caunette",
+"dep": "34",
+"population": 320.0,
+"superficie_km2": 21.814003950941284
+},
+{
+"codgeo": "34060",
+"libgeo": "Causse-de-la-Selle",
+"dep": "34",
+"population": 443.0,
+"superficie_km2": 45.34875863085108
+},
+{
+"codgeo": "34061",
+"libgeo": "Causses-et-Veyran",
+"dep": "34",
+"population": 620.0,
+"superficie_km2": 17.515569816222527
+},
+{
+"codgeo": "34062",
+"libgeo": "Caussiniojouls",
+"dep": "34",
+"population": 168.0,
+"superficie_km2": 10.69850661911304
+},
+{
+"codgeo": "34063",
+"libgeo": "Caux",
+"dep": "34",
+"population": 2692.0,
+"superficie_km2": 25.09574922673416
+},
+{
+"codgeo": "34064",
+"libgeo": "Le Caylar",
+"dep": "34",
+"population": 462.0,
+"superficie_km2": 22.48920913529817
+},
+{
+"codgeo": "34065",
+"libgeo": "Cazedarnes",
+"dep": "34",
+"population": 640.0,
+"superficie_km2": 11.749416051679383
+},
+{
+"codgeo": "34066",
+"libgeo": "Cazevieille",
+"dep": "34",
+"population": 228.0,
+"superficie_km2": 16.33468925241862
+},
+{
+"codgeo": "34067",
+"libgeo": "Cazilhac",
+"dep": "34",
+"population": 1583.0,
+"superficie_km2": 11.693172591912209
+},
+{
+"codgeo": "34068",
+"libgeo": "Cazouls-d'Hérault",
+"dep": "34",
+"population": 413.0,
+"superficie_km2": 4.409347990958484
+},
+{
+"codgeo": "34069",
+"libgeo": "Cazouls-lès-Béziers",
+"dep": "34",
+"population": 5185.0,
+"superficie_km2": 38.6445949600425
+},
+{
+"codgeo": "34070",
+"libgeo": "Cébazan",
+"dep": "34",
+"population": 637.0,
+"superficie_km2": 13.019058645982257
+},
+{
+"codgeo": "34071",
+"libgeo": "Ceilhes-et-Rocozels",
+"dep": "34",
+"population": 247.0,
+"superficie_km2": 27.739114472020496
+},
+{
+"codgeo": "34072",
+"libgeo": "Celles",
+"dep": "34",
+"population": 25.0,
+"superficie_km2": 7.515735391273494
+},
+{
+"codgeo": "34073",
+"libgeo": "Cers",
+"dep": "34",
+"population": 2523.0,
+"superficie_km2": 7.934505470668086
+},
+{
+"codgeo": "34074",
+"libgeo": "Cessenon-sur-Orb",
+"dep": "34",
+"population": 2390.0,
+"superficie_km2": 36.64992491440819
+},
+{
+"codgeo": "34075",
+"libgeo": "Cesseras",
+"dep": "34",
+"population": 432.0,
+"superficie_km2": 14.904001079829278
+},
+{
+"codgeo": "34076",
+"libgeo": "Ceyras",
+"dep": "34",
+"population": 1389.0,
+"superficie_km2": 7.061687433401536
+},
+{
+"codgeo": "34077",
+"libgeo": "Clapiers",
+"dep": "34",
+"population": 6010.0,
+"superficie_km2": 7.815648934185607
+},
+{
+"codgeo": "34078",
+"libgeo": "Claret",
+"dep": "34",
+"population": 1697.0,
+"superficie_km2": 28.497588859304525
+},
+{
+"codgeo": "34079",
+"libgeo": "Clermont-l'Hérault",
+"dep": "34",
+"population": 9372.0,
+"superficie_km2": 32.50663092364008
+},
+{
+"codgeo": "34080",
+"libgeo": "Colombières-sur-Orb",
+"dep": "34",
+"population": 494.0,
+"superficie_km2": 8.292854446789994
+},
+{
+"codgeo": "34081",
+"libgeo": "Colombiers",
+"dep": "34",
+"population": 2755.0,
+"superficie_km2": 10.048599387085067
+},
+{
+"codgeo": "34082",
+"libgeo": "Combaillaux",
+"dep": "34",
+"population": 1961.0,
+"superficie_km2": 9.340695116537765
+},
+{
+"codgeo": "34083",
+"libgeo": "Combes",
+"dep": "34",
+"population": 321.0,
+"superficie_km2": 11.028669395544416
+},
+{
+"codgeo": "34084",
+"libgeo": "Corneilhan",
+"dep": "34",
+"population": 1632.0,
+"superficie_km2": 14.365110855732224
+},
+{
+"codgeo": "34085",
+"libgeo": "Coulobres",
+"dep": "34",
+"population": 371.0,
+"superficie_km2": 2.8608347988008678
+},
+{
+"codgeo": "34086",
+"libgeo": "Courniou",
+"dep": "34",
+"population": 615.0,
+"superficie_km2": 30.235746436207762
+},
+{
+"codgeo": "34087",
+"libgeo": "Cournonsec",
+"dep": "34",
+"population": 3583.0,
+"superficie_km2": 12.231882300549017
+},
+{
+"codgeo": "34088",
+"libgeo": "Cournonterral",
+"dep": "34",
+"population": 7019.0,
+"superficie_km2": 29.024616638883916
+},
+{
+"codgeo": "34089",
+"libgeo": "Creissan",
+"dep": "34",
+"population": 1404.0,
+"superficie_km2": 8.683412538571165
+},
+{
+"codgeo": "34090",
+"libgeo": "Le Crès",
+"dep": "34",
+"population": 9267.0,
+"superficie_km2": 5.783199581555268
+},
+{
+"codgeo": "34091",
+"libgeo": "Le Cros",
+"dep": "34",
+"population": 57.0,
+"superficie_km2": 22.241000377728895
+},
+{
+"codgeo": "34092",
+"libgeo": "Cruzy",
+"dep": "34",
+"population": 954.0,
+"superficie_km2": 25.903452758767884
+},
+{
+"codgeo": "34093",
+"libgeo": "Dio-et-Valquières",
+"dep": "34",
+"population": null,
+"superficie_km2": 18.61833876167014
+},
+{
+"codgeo": "34094",
+"libgeo": "Espondeilhan",
+"dep": "34",
+"population": 1176.0,
+"superficie_km2": 5.187266472084091
+},
+{
+"codgeo": "34095",
+"libgeo": "Fabrègues",
+"dep": "34",
+"population": 7200.0,
+"superficie_km2": 32.15666302245018
+},
+{
+"codgeo": "34096",
+"libgeo": "Faugères",
+"dep": "34",
+"population": 555.0,
+"superficie_km2": 26.095624359952552
+},
+{
+"codgeo": "34097",
+"libgeo": "Félines-Minervois",
+"dep": "34",
+"population": 505.0,
+"superficie_km2": 30.22200147332125
+},
+{
+"codgeo": "34098",
+"libgeo": "Ferrals-les-Montagnes",
+"dep": "34",
+"population": 147.0,
+"superficie_km2": 25.660117918620305
+},
+{
+"codgeo": "34099",
+"libgeo": "Ferrières-les-Verreries",
+"dep": "34",
+"population": 46.0,
+"superficie_km2": 17.399601527101794
+},
+{
+"codgeo": "34100",
+"libgeo": "Ferrières-Poussarou",
+"dep": "34",
+"population": 67.0,
+"superficie_km2": 25.69333276326948
+},
+{
+"codgeo": "34101",
+"libgeo": "Florensac",
+"dep": "34",
+"population": 5138.0,
+"superficie_km2": 36.305939811320265
+},
+{
+"codgeo": "34102",
+"libgeo": "Fontanès",
+"dep": "34",
+"population": 355.0,
+"superficie_km2": 8.317172458051633
+},
+{
+"codgeo": "34103",
+"libgeo": "Fontès",
+"dep": "34",
+"population": 1059.0,
+"superficie_km2": 17.750446217671456
+},
+{
+"codgeo": "34104",
+"libgeo": "Fos",
+"dep": "34",
+"population": 131.0,
+"superficie_km2": 6.575095116873867
+},
+{
+"codgeo": "34105",
+"libgeo": "Fouzilhon",
+"dep": "34",
+"population": 247.0,
+"superficie_km2": 5.510182842190717
+},
+{
+"codgeo": "34106",
+"libgeo": "Fozières",
+"dep": "34",
+"population": 193.0,
+"superficie_km2": 5.429105612705395
+},
+{
+"codgeo": "34107",
+"libgeo": "Fraisse-sur-Agout",
+"dep": "34",
+"population": 337.0,
+"superficie_km2": 58.65550734430941
+},
+{
+"codgeo": "34108",
+"libgeo": "Frontignan",
+"dep": "34",
+"population": 23788.0,
+"superficie_km2": 39.58851030064475
+},
+{
+"codgeo": "34109",
+"libgeo": "Gabian",
+"dep": "34",
+"population": 864.0,
+"superficie_km2": 15.994159730995628
+},
+{
+"codgeo": "34110",
+"libgeo": "Galargues",
+"dep": "34",
+"population": 755.0,
+"superficie_km2": 11.461880711743856
+},
+{
+"codgeo": "34111",
+"libgeo": "Ganges",
+"dep": "34",
+"population": 3854.0,
+"superficie_km2": 7.305692759543829
+},
+{
+"codgeo": "34112",
+"libgeo": "Garrigues",
+"dep": "34",
+"population": 232.0,
+"superficie_km2": 4.916931676696354
+},
+{
+"codgeo": "34113",
+"libgeo": "Gigean",
+"dep": "34",
+"population": 6559.0,
+"superficie_km2": 16.26029109495461
+},
+{
+"codgeo": "34114",
+"libgeo": "Gignac",
+"dep": "34",
+"population": 6713.0,
+"superficie_km2": 29.828606710024456
+},
+{
+"codgeo": "34115",
+"libgeo": "Gorniès",
+"dep": "34",
+"population": 107.0,
+"superficie_km2": 29.253845485224446
+},
+{
+"codgeo": "34116",
+"libgeo": "Grabels",
+"dep": "34",
+"population": 9060.0,
+"superficie_km2": 16.529078614968984
+},
+{
+"codgeo": "34117",
+"libgeo": "Graissessac",
+"dep": "34",
+"population": 569.0,
+"superficie_km2": 9.906378992488362
+},
+{
+"codgeo": "34118",
+"libgeo": "Guzargues",
+"dep": "34",
+"population": 497.0,
+"superficie_km2": 11.63561394808031
+},
+{
+"codgeo": "34119",
+"libgeo": "Hérépian",
+"dep": "34",
+"population": 1559.0,
+"superficie_km2": 8.95189060351166
+},
+{
+"codgeo": "34120",
+"libgeo": "Jacou",
+"dep": "34",
+"population": 6964.0,
+"superficie_km2": 3.3597279545339487
+},
+{
+"codgeo": "34121",
+"libgeo": "Joncels",
+"dep": "34",
+"population": 261.0,
+"superficie_km2": 46.405934528675296
+},
+{
+"codgeo": "34122",
+"libgeo": "Jonquières",
+"dep": "34",
+"population": 588.0,
+"superficie_km2": 2.081884800760283
+},
+{
+"codgeo": "34123",
+"libgeo": "Juvignac",
+"dep": "34",
+"population": 13776.0,
+"superficie_km2": 11.092675020093292
+},
+{
+"codgeo": "34124",
+"libgeo": "Lacoste",
+"dep": "34",
+"population": 312.0,
+"superficie_km2": 7.395847337877913
+},
+{
+"codgeo": "34125",
+"libgeo": "Lagamas",
+"dep": "34",
+"population": 110.0,
+"superficie_km2": 4.472244734824521
+},
+{
+"codgeo": "34126",
+"libgeo": "Lamalou-les-Bains",
+"dep": "34",
+"population": 2421.0,
+"superficie_km2": 6.255015418282088
+},
+{
+"codgeo": "34127",
+"libgeo": "Lansargues",
+"dep": "34",
+"population": 3130.0,
+"superficie_km2": 18.59775999922407
+},
+{
+"codgeo": "34128",
+"libgeo": "Laroque",
+"dep": "34",
+"population": 1670.0,
+"superficie_km2": 6.649415910569154
+},
+{
+"codgeo": "34129",
+"libgeo": "Lattes",
+"dep": "34",
+"population": 17592.0,
+"superficie_km2": 32.25984050182907
+},
+{
+"codgeo": "34130",
+"libgeo": "Laurens",
+"dep": "34",
+"population": 1794.0,
+"superficie_km2": 16.6740325293907
+},
+{
+"codgeo": "34131",
+"libgeo": "Lauret",
+"dep": "34",
+"population": 621.0,
+"superficie_km2": 6.544226973205451
+},
+{
+"codgeo": "34132",
+"libgeo": "Lauroux",
+"dep": "34",
+"population": 208.0,
+"superficie_km2": 26.753319544685205
+},
+{
+"codgeo": "34133",
+"libgeo": "Lavalette",
+"dep": "34",
+"population": 55.0,
+"superficie_km2": 8.508003087247554
+},
+{
+"codgeo": "34134",
+"libgeo": "Lavérune",
+"dep": "34",
+"population": 3298.0,
+"superficie_km2": 7.2051714362184605
+},
+{
+"codgeo": "34135",
+"libgeo": "Lespignan",
+"dep": "34",
+"population": 3355.0,
+"superficie_km2": 22.956847328520745
+},
+{
+"codgeo": "34136",
+"libgeo": "Lézignan-la-Cèbe",
+"dep": "34",
+"population": 1569.0,
+"superficie_km2": 6.32889781728801
+},
+{
+"codgeo": "34137",
+"libgeo": "Liausson",
+"dep": "34",
+"population": 153.0,
+"superficie_km2": 8.025768929684865
+},
+{
+"codgeo": "34138",
+"libgeo": "Lieuran-Cabrières",
+"dep": "34",
+"population": 338.0,
+"superficie_km2": 6.228866464497181
+},
+{
+"codgeo": "34139",
+"libgeo": "Lieuran-lès-Béziers",
+"dep": "34",
+"population": 1483.0,
+"superficie_km2": 8.604707797988802
+},
+{
+"codgeo": "34140",
+"libgeo": "Lignan-sur-Orb",
+"dep": "34",
+"population": 3227.0,
+"superficie_km2": 3.389641945056431
+},
+{
+"codgeo": "34141",
+"libgeo": "La Livinière",
+"dep": "34",
+"population": 526.0,
+"superficie_km2": 31.21457862436941
+},
+{
+"codgeo": "34142",
+"libgeo": "Lodève",
+"dep": "34",
+"population": 7202.0,
+"superficie_km2": 23.354316583627696
+},
+{
+"codgeo": "34143",
+"libgeo": "Loupian",
+"dep": "34",
+"population": 2179.0,
+"superficie_km2": 23.317465641855637
+},
+{
+"codgeo": "34144",
+"libgeo": "Lunas",
+"dep": "34",
+"population": 822.0,
+"superficie_km2": 45.011787842784216
+},
+{
+"codgeo": "34145",
+"libgeo": "Lunel",
+"dep": "34",
+"population": 26380.0,
+"superficie_km2": 24.0864872895922
+},
+{
+"codgeo": "34146",
+"libgeo": "Lunel-Viel",
+"dep": "34",
+"population": 4497.0,
+"superficie_km2": 12.249495451865677
+},
+{
+"codgeo": "34147",
+"libgeo": "Magalas",
+"dep": "34",
+"population": 3531.0,
+"superficie_km2": 20.81549557763415
+},
+{
+"codgeo": "34148",
+"libgeo": "Maraussan",
+"dep": "34",
+"population": 4693.0,
+"superficie_km2": 12.52436892167662
+},
+{
+"codgeo": "34149",
+"libgeo": "Margon",
+"dep": "34",
+"population": 775.0,
+"superficie_km2": 4.534393628927544
+},
+{
+"codgeo": "34150",
+"libgeo": "Marseillan",
+"dep": "34",
+"population": 8047.0,
+"superficie_km2": 52.82047403779416
+},
+{
+"codgeo": "34151",
+"libgeo": "Marsillargues",
+"dep": "34",
+"population": 6787.0,
+"superficie_km2": 42.18953177658861
+},
+{
+"codgeo": "34152",
+"libgeo": "Mas-de-Londres",
+"dep": "34",
+"population": 673.0,
+"superficie_km2": 19.084068648600283
+},
+{
+"codgeo": "34153",
+"libgeo": "Les Matelles",
+"dep": "34",
+"population": 2068.0,
+"superficie_km2": 16.97691168343138
+},
+{
+"codgeo": "34154",
+"libgeo": "Mauguio",
+"dep": "34",
+"population": 16417.0,
+"superficie_km2": 76.80045720595764
+},
+{
+"codgeo": "34155",
+"libgeo": "Maureilhan",
+"dep": "34",
+"population": 2465.0,
+"superficie_km2": 10.421312236243919
+},
+{
+"codgeo": "34156",
+"libgeo": "Mérifons",
+"dep": "34",
+"population": 57.0,
+"superficie_km2": 6.675152257587089
+},
+{
+"codgeo": "34157",
+"libgeo": "Mèze",
+"dep": "34",
+"population": 12711.0,
+"superficie_km2": 47.983665437438404
+},
+{
+"codgeo": "34158",
+"libgeo": "Minerve",
+"dep": "34",
+"population": 96.0,
+"superficie_km2": 27.769595796844577
+},
+{
+"codgeo": "34159",
+"libgeo": "Mireval",
+"dep": "34",
+"population": 3301.0,
+"superficie_km2": 11.138164916026671
+},
+{
+"codgeo": "34160",
+"libgeo": "Mons",
+"dep": "34",
+"population": 671.0,
+"superficie_km2": 21.54751155606221
+},
+{
+"codgeo": "34161",
+"libgeo": "Montady",
+"dep": "34",
+"population": 4020.0,
+"superficie_km2": 10.07062227321247
+},
+{
+"codgeo": "34162",
+"libgeo": "Montagnac",
+"dep": "34",
+"population": 4465.0,
+"superficie_km2": 39.74532665958097
+},
+{
+"codgeo": "34163",
+"libgeo": "Montarnaud",
+"dep": "34",
+"population": 4186.0,
+"superficie_km2": 27.593644799141423
+},
+{
+"codgeo": "34164",
+"libgeo": "Montaud",
+"dep": "34",
+"population": 1024.0,
+"superficie_km2": 13.098743327634093
+},
+{
+"codgeo": "34165",
+"libgeo": "Montbazin",
+"dep": "34",
+"population": 2903.0,
+"superficie_km2": 21.483944326200344
+},
+{
+"codgeo": "34166",
+"libgeo": "Montblanc",
+"dep": "34",
+"population": 2896.0,
+"superficie_km2": 27.235837369399423
+},
+{
+"codgeo": "34167",
+"libgeo": "Montels",
+"dep": "34",
+"population": 243.0,
+"superficie_km2": 7.309612523818039
+},
+{
+"codgeo": "34168",
+"libgeo": "Montesquieu",
+"dep": "34",
+"population": 76.0,
+"superficie_km2": 14.44226832094191
+},
+{
+"codgeo": "34169",
+"libgeo": "Montferrier-sur-Lez",
+"dep": "34",
+"population": 4117.0,
+"superficie_km2": 7.581984565111872
+},
+{
+"codgeo": "34170",
+"libgeo": "Montouliers",
+"dep": "34",
+"population": 232.0,
+"superficie_km2": 7.789757859629767
+},
+{
+"codgeo": "34171",
+"libgeo": "Montoulieu",
+"dep": "34",
+"population": 183.0,
+"superficie_km2": 16.267614865049033
+},
+{
+"codgeo": "34172",
+"libgeo": "Montpellier",
+"dep": "34",
+"population": 307101.0,
+"superficie_km2": 56.82373960740966
+},
+{
+"codgeo": "34173",
+"libgeo": "Montpeyroux",
+"dep": "34",
+"population": 1418.0,
+"superficie_km2": 22.508292198217713
+},
+{
+"codgeo": "34174",
+"libgeo": "Moulès-et-Baucels",
+"dep": "34",
+"population": 855.0,
+"superficie_km2": 22.797581116910006
+},
+{
+"codgeo": "34175",
+"libgeo": "Mourèze",
+"dep": "34",
+"population": 190.0,
+"superficie_km2": 13.758088939426878
+},
+{
+"codgeo": "34176",
+"libgeo": "Mudaison",
+"dep": "34",
+"population": 2954.0,
+"superficie_km2": 8.11507250656255
+},
+{
+"codgeo": "34177",
+"libgeo": "Murles",
+"dep": "34",
+"population": 353.0,
+"superficie_km2": 23.62637916984597
+},
+{
+"codgeo": "34178",
+"libgeo": "Murviel-lès-Béziers",
+"dep": "34",
+"population": 3038.0,
+"superficie_km2": 32.780627604073615
+},
+{
+"codgeo": "34179",
+"libgeo": "Murviel-lès-Montpellier",
+"dep": "34",
+"population": 2002.0,
+"superficie_km2": 10.212842667807816
+},
+{
+"codgeo": "34180",
+"libgeo": "Nébian",
+"dep": "34",
+"population": 1573.0,
+"superficie_km2": 9.90101510453369
+},
+{
+"codgeo": "34181",
+"libgeo": "Neffiès",
+"dep": "34",
+"population": 1018.0,
+"superficie_km2": 10.934646628781268
+},
+{
+"codgeo": "34182",
+"libgeo": "Nézignan-l'Évêque",
+"dep": "34",
+"population": 1730.0,
+"superficie_km2": 4.178571869245478
+},
+{
+"codgeo": "34183",
+"libgeo": "Nissan-lez-Enserune",
+"dep": "34",
+"population": 4077.0,
+"superficie_km2": 30.211376849099675
+},
+{
+"codgeo": "34184",
+"libgeo": "Nizas",
+"dep": "34",
+"population": 661.0,
+"superficie_km2": 8.663736353424948
+},
+{
+"codgeo": "34185",
+"libgeo": "Notre-Dame-de-Londres",
+"dep": "34",
+"population": 523.0,
+"superficie_km2": 28.566055794510167
+},
+{
+"codgeo": "34186",
+"libgeo": "Octon",
+"dep": "34",
+"population": 520.0,
+"superficie_km2": 21.929301754067325
+},
+{
+"codgeo": "34187",
+"libgeo": "Olargues",
+"dep": "34",
+"population": 493.0,
+"superficie_km2": 18.86481972840775
+},
+{
+"codgeo": "34188",
+"libgeo": "Olmet-et-Villecun",
+"dep": "34",
+"population": 166.0,
+"superficie_km2": 9.660130117057104
+},
+{
+"codgeo": "34189",
+"libgeo": "Olonzac",
+"dep": "34",
+"population": 1683.0,
+"superficie_km2": 19.222910825300524
+},
+{
+"codgeo": "34190",
+"libgeo": "Oupia",
+"dep": "34",
+"population": 276.0,
+"superficie_km2": 8.96604817316292
+},
+{
+"codgeo": "34191",
+"libgeo": "Pailhès",
+"dep": "34",
+"population": 608.0,
+"superficie_km2": 6.0664283383749105
+},
+{
+"codgeo": "34192",
+"libgeo": "Palavas-les-Flots",
+"dep": "34",
+"population": 6007.0,
+"superficie_km2": 9.188417432021657
+},
+{
+"codgeo": "34193",
+"libgeo": "Pardailhan",
+"dep": "34",
+"population": 171.0,
+"superficie_km2": 41.198811355984695
+},
+{
+"codgeo": "34194",
+"libgeo": "Paulhan",
+"dep": "34",
+"population": 4022.0,
+"superficie_km2": 11.42002691293289
+},
+{
+"codgeo": "34195",
+"libgeo": "Pégairolles-de-Buèges",
+"dep": "34",
+"population": 55.0,
+"superficie_km2": 13.115402325804183
+},
+{
+"codgeo": "34196",
+"libgeo": "Pégairolles-de-l'Escalette",
+"dep": "34",
+"population": 152.0,
+"superficie_km2": 31.780546167472647
+},
+{
+"codgeo": "34197",
+"libgeo": "Péret",
+"dep": "34",
+"population": 1131.0,
+"superficie_km2": 10.979594978334069
+},
+{
+"codgeo": "34198",
+"libgeo": "Pérols",
+"dep": "34",
+"population": 9541.0,
+"superficie_km2": 8.719773509808814
+},
+{
+"codgeo": "34199",
+"libgeo": "Pézenas",
+"dep": "34",
+"population": 7789.0,
+"superficie_km2": 29.702297463835944
+},
+{
+"codgeo": "34200",
+"libgeo": "Pézènes-les-Mines",
+"dep": "34",
+"population": 236.0,
+"superficie_km2": 27.060221614693234
+},
+{
+"codgeo": "34201",
+"libgeo": "Pierrerue",
+"dep": "34",
+"population": 293.0,
+"superficie_km2": 11.549301770252125
+},
+{
+"codgeo": "34202",
+"libgeo": "Pignan",
+"dep": "34",
+"population": 8326.0,
+"superficie_km2": 20.518805525079895
+},
+{
+"codgeo": "34203",
+"libgeo": "Pinet",
+"dep": "34",
+"population": 2012.0,
+"superficie_km2": 8.950884874519645
+},
+{
+"codgeo": "34204",
+"libgeo": "Plaissan",
+"dep": "34",
+"population": 1610.0,
+"superficie_km2": 5.860047591691555
+},
+{
+"codgeo": "34205",
+"libgeo": "Les Plans",
+"dep": "34",
+"population": 317.0,
+"superficie_km2": 17.915385772311293
+},
+{
+"codgeo": "34206",
+"libgeo": "Poilhes",
+"dep": "34",
+"population": 534.0,
+"superficie_km2": 5.963044555611111
+},
+{
+"codgeo": "34207",
+"libgeo": "Pomérols",
+"dep": "34",
+"population": 2255.0,
+"superficie_km2": 10.863600901289498
+},
+{
+"codgeo": "34208",
+"libgeo": "Popian",
+"dep": "34",
+"population": 368.0,
+"superficie_km2": 5.770460347661488
+},
+{
+"codgeo": "34209",
+"libgeo": "Portiragnes",
+"dep": "34",
+"population": 3388.0,
+"superficie_km2": 20.19096366170497
+},
+{
+"codgeo": "34210",
+"libgeo": "Le Pouget",
+"dep": "34",
+"population": 2101.0,
+"superficie_km2": 13.989355031676192
+},
+{
+"codgeo": "34211",
+"libgeo": "Le Poujol-sur-Orb",
+"dep": "34",
+"population": 944.0,
+"superficie_km2": 4.674241534619983
+},
+{
+"codgeo": "34212",
+"libgeo": "Poujols",
+"dep": "34",
+"population": 183.0,
+"superficie_km2": 2.8299150792866676
+},
+{
+"codgeo": "34213",
+"libgeo": "Poussan",
+"dep": "34",
+"population": 6540.0,
+"superficie_km2": 29.97696463026446
+},
+{
+"codgeo": "34214",
+"libgeo": "Pouzolles",
+"dep": "34",
+"population": 1214.0,
+"superficie_km2": 10.14716082827244
+},
+{
+"codgeo": "34215",
+"libgeo": "Pouzols",
+"dep": "34",
+"population": 956.0,
+"superficie_km2": 2.912513796220915
+},
+{
+"codgeo": "34216",
+"libgeo": "Le Pradal",
+"dep": "34",
+"population": 325.0,
+"superficie_km2": 3.5184784076874207
+},
+{
+"codgeo": "34217",
+"libgeo": "Prades-le-Lez",
+"dep": "34",
+"population": 6207.0,
+"superficie_km2": 8.977240131687127
+},
+{
+"codgeo": "34218",
+"libgeo": "Prades-sur-Vernazobre",
+"dep": "34",
+"population": 369.0,
+"superficie_km2": 19.978342237689944
+},
+{
+"codgeo": "34219",
+"libgeo": "Prémian",
+"dep": "34",
+"population": 484.0,
+"superficie_km2": 16.517474049680978
+},
+{
+"codgeo": "34220",
+"libgeo": "Le Puech",
+"dep": "34",
+"population": 260.0,
+"superficie_km2": 15.880202899858196
+},
+{
+"codgeo": "34221",
+"libgeo": "Puéchabon",
+"dep": "34",
+"population": 507.0,
+"superficie_km2": 31.49997356670768
+},
+{
+"codgeo": "34222",
+"libgeo": "Puilacher",
+"dep": "34",
+"population": 644.0,
+"superficie_km2": 2.708711841823865
+},
+{
+"codgeo": "34223",
+"libgeo": "Puimisson",
+"dep": "34",
+"population": 1218.0,
+"superficie_km2": 6.301382103592137
+},
+{
+"codgeo": "34224",
+"libgeo": "Puissalicon",
+"dep": "34",
+"population": null,
+"superficie_km2": null
+},
+{
+"codgeo": "34225",
+"libgeo": "Puisserguier",
+"dep": "34",
+"population": 3034.0,
+"superficie_km2": 28.07036034121095
+},
+{
+"codgeo": "34226",
+"libgeo": "Quarante",
+"dep": "34",
+"population": 1788.0,
+"superficie_km2": 30.13844860324125
+},
+{
+"codgeo": "34227",
+"libgeo": "Restinclières",
+"dep": "34",
+"population": 2573.0,
+"superficie_km2": 6.138815037854817
+},
+{
+"codgeo": "34228",
+"libgeo": "Rieussec",
+"dep": "34",
+"population": 82.0,
+"superficie_km2": 22.607575701245214
+},
+{
+"codgeo": "34229",
+"libgeo": "Riols",
+"dep": "34",
+"population": 714.0,
+"superficie_km2": 56.97552732139019
+},
+{
+"codgeo": "34230",
+"libgeo": "Les Rives",
+"dep": "34",
+"population": 151.0,
+"superficie_km2": 23.9793642580145
+},
+{
+"codgeo": "34231",
+"libgeo": "Romiguières",
+"dep": "34",
+"population": 23.0,
+"superficie_km2": 3.4499856845598034
+},
+{
+"codgeo": "34232",
+"libgeo": "Roquebrun",
+"dep": "34",
+"population": 603.0,
+"superficie_km2": 39.686581771299
+},
+{
+"codgeo": "34233",
+"libgeo": "Roqueredonde",
+"dep": "34",
+"population": 211.0,
+"superficie_km2": 22.97324844746135
+},
+{
+"codgeo": "34234",
+"libgeo": "Roquessels",
+"dep": "34",
+"population": 111.0,
+"superficie_km2": 8.986859026916
+},
+{
+"codgeo": "34235",
+"libgeo": "Rosis",
+"dep": "34",
+"population": 271.0,
+"superficie_km2": 52.60385548573455
+},
+{
+"codgeo": "34236",
+"libgeo": "Rouet",
+"dep": "34",
+"population": 69.0,
+"superficie_km2": 25.04051149595851
+},
+{
+"codgeo": "34237",
+"libgeo": "Roujan",
+"dep": "34",
+"population": 2297.0,
+"superficie_km2": 16.950221183268024
+},
+{
+"codgeo": "34238",
+"libgeo": "Saint-André-de-Buèges",
+"dep": "34",
+"population": 47.0,
+"superficie_km2": 15.392630642263388
+},
+{
+"codgeo": "34239",
+"libgeo": "Saint-André-de-Sangonis",
+"dep": "34",
+"population": 6364.0,
+"superficie_km2": 19.583941745401674
+},
+{
+"codgeo": "34240",
+"libgeo": "Saint-Aunès",
+"dep": "34",
+"population": 4333.0,
+"superficie_km2": 12.60554930285318
+},
+{
+"codgeo": "34241",
+"libgeo": "Saint-Bauzille-de-la-Sylve",
+"dep": "34",
+"population": 938.0,
+"superficie_km2": 8.594727871839467
+},
+{
+"codgeo": "34242",
+"libgeo": "Saint-Bauzille-de-Montmel",
+"dep": "34",
+"population": 1212.0,
+"superficie_km2": 21.39979833389471
+},
+{
+"codgeo": "34243",
+"libgeo": "Saint-Bauzille-de-Putois",
+"dep": "34",
+"population": 1839.0,
+"superficie_km2": 18.30287510127061
+},
+{
+"codgeo": "34244",
+"libgeo": "Saint-Brès",
+"dep": "34",
+"population": 3462.0,
+"superficie_km2": 4.813676833548059
+},
+{
+"codgeo": "34245",
+"libgeo": "Saint-Chinian",
+"dep": "34",
+"population": 1775.0,
+"superficie_km2": 22.87914831693054
+},
+{
+"codgeo": "34246",
+"libgeo": "Entre-Vignes",
+"dep": "34",
+"population": 2186.0,
+"superficie_km2": 17.16317785028035
+},
+{
+"codgeo": "34247",
+"libgeo": "Saint-Clément-de-Rivière",
+"dep": "34",
+"population": 5140.0,
+"superficie_km2": 12.640027755722922
+},
+{
+"codgeo": "34248",
+"libgeo": "Sainte-Croix-de-Quintillargues",
+"dep": "34",
+"population": 970.0,
+"superficie_km2": 6.6391523172684375
+},
+{
+"codgeo": "34249",
+"libgeo": "Saint-Drézéry",
+"dep": "34",
+"population": 2952.0,
+"superficie_km2": 10.503472558489122
+},
+{
+"codgeo": "34250",
+"libgeo": "Saint-Étienne-d'Albagnan",
+"dep": "34",
+"population": 301.0,
+"superficie_km2": 22.65719166483609
+},
+{
+"codgeo": "34251",
+"libgeo": "Saint-Étienne-de-Gourgas",
+"dep": "34",
+"population": 520.0,
+"superficie_km2": 19.587294175373753
+},
+{
+"codgeo": "34252",
+"libgeo": "Saint-Étienne-Estréchoux",
+"dep": "34",
+"population": 257.0,
+"superficie_km2": 3.5195872883710186
+},
+{
+"codgeo": "34253",
+"libgeo": "Saint-Félix-de-l'Héras",
+"dep": "34",
+"population": 32.0,
+"superficie_km2": 12.830368414385351
+},
+{
+"codgeo": "34254",
+"libgeo": "Saint-Félix-de-Lodez",
+"dep": "34",
+"population": 1142.0,
+"superficie_km2": 4.397047151752328
+},
+{
+"codgeo": "34255",
+"libgeo": "Saint-Gély-du-Fesc",
+"dep": "34",
+"population": 10530.0,
+"superficie_km2": 16.46259734982602
+},
+{
+"codgeo": "34256",
+"libgeo": "Saint-Geniès-des-Mourgues",
+"dep": "34",
+"population": 2112.0,
+"superficie_km2": 10.902721180276163
+},
+{
+"codgeo": "34257",
+"libgeo": "Saint-Geniès-de-Varensal",
+"dep": "34",
+"population": 216.0,
+"superficie_km2": 11.96268217376905
+},
+{
+"codgeo": "34258",
+"libgeo": "Saint-Geniès-de-Fontedit",
+"dep": "34",
+"population": 1695.0,
+"superficie_km2": 9.379428576678885
+},
+{
+"codgeo": "34259",
+"libgeo": "Saint-Georges-d'Orques",
+"dep": "34",
+"population": 5707.0,
+"superficie_km2": 9.235970361785737
+},
+{
+"codgeo": "34260",
+"libgeo": "Saint-Gervais-sur-Mare",
+"dep": "34",
+"population": 839.0,
+"superficie_km2": 24.254263515747976
+},
+{
+"codgeo": "34261",
+"libgeo": "Saint-Guilhem-le-Désert",
+"dep": "34",
+"population": 243.0,
+"superficie_km2": 38.63930843585499
+},
+{
+"codgeo": "34262",
+"libgeo": "Saint-Guiraud",
+"dep": "34",
+"population": null,
+"superficie_km2": null
+},
+{
+"codgeo": "34263",
+"libgeo": "Saint-Hilaire-de-Beauvoir",
+"dep": "34",
+"population": 458.0,
+"superficie_km2": 4.541227428486463
+},
+{
+"codgeo": "34264",
+"libgeo": "Saint-Jean-de-Buèges",
+"dep": "34",
+"population": 211.0,
+"superficie_km2": 17.002544878758492
+},
+{
+"codgeo": "34265",
+"libgeo": "Saint-Jean-de-Cornies",
+"dep": "34",
+"population": 839.0,
+"superficie_km2": 3.0575708623331708
+},
+{
+"codgeo": "34266",
+"libgeo": "Saint-Jean-de-Cuculles",
+"dep": "34",
+"population": 532.0,
+"superficie_km2": 9.111002087584353
+},
+{
+"codgeo": "34267",
+"libgeo": "Saint-Jean-de-Fos",
+"dep": "34",
+"population": 1743.0,
+"superficie_km2": 14.13913128767269
+},
+{
+"codgeo": "34268",
+"libgeo": "Saint-Jean-de-la-Blaquière",
+"dep": "34",
+"population": 695.0,
+"superficie_km2": 17.128544669875183
+},
+{
+"codgeo": "34269",
+"libgeo": "Saint-Jean-de-Minervois",
+"dep": "34",
+"population": 133.0,
+"superficie_km2": 32.55390018625129
+},
+{
+"codgeo": "34270",
+"libgeo": "Saint-Jean-de-Védas",
+"dep": "34",
+"population": 13300.0,
+"superficie_km2": 13.392880375824173
+},
+{
+"codgeo": "34271",
+"libgeo": "Saint-Julien",
+"dep": "34",
+"population": 225.0,
+"superficie_km2": 19.45064397211601
+},
+{
+"codgeo": "34272",
+"libgeo": "Saint-Just",
+"dep": "34",
+"population": 3290.0,
+"superficie_km2": 6.195677407770905
+},
+{
+"codgeo": "34273",
+"libgeo": "Saint-Martin-de-l'Arçon",
+"dep": "34",
+"population": 103.0,
+"superficie_km2": 4.2332422657174
+},
+{
+"codgeo": "34274",
+"libgeo": "Saint-Martin-de-Londres",
+"dep": "34",
+"population": 2728.0,
+"superficie_km2": 38.45827721734505
+},
+{
+"codgeo": "34276",
+"libgeo": "Saint-Mathieu-de-Tréviers",
+"dep": "34",
+"population": 4869.0,
+"superficie_km2": 21.767173083019564
+},
+{
+"codgeo": "34277",
+"libgeo": "Saint-Maurice-Navacelles",
+"dep": "34",
+"population": 184.0,
+"superficie_km2": 68.61555100427827
+},
+{
+"codgeo": "34278",
+"libgeo": "Saint-Michel",
+"dep": "34",
+"population": 60.0,
+"superficie_km2": 25.474444873996156
+},
+{
+"codgeo": "34279",
+"libgeo": "Saint-Nazaire-de-Ladarez",
+"dep": "34",
+"population": 321.0,
+"superficie_km2": 28.080288691514923
+},
+{
+"codgeo": "34280",
+"libgeo": "Saint-Nazaire-de-Pézan",
+"dep": "34",
+"population": 620.0,
+"superficie_km2": 5.505128409310062
+},
+{
+"codgeo": "34281",
+"libgeo": "Saint-Pargoire",
+"dep": "34",
+"population": 2438.0,
+"superficie_km2": 23.931372933564187
+},
+{
+"codgeo": "34282",
+"libgeo": "Saint-Paul-et-Valmalle",
+"dep": "34",
+"population": 1367.0,
+"superficie_km2": 12.795967325283607
+},
+{
+"codgeo": "34283",
+"libgeo": "Saint-Pierre-de-la-Fage",
+"dep": "34",
+"population": 123.0,
+"superficie_km2": 18.660063620865532
+},
+{
+"codgeo": "34284",
+"libgeo": "Saint-Pons-de-Thomières",
+"dep": "34",
+"population": 1718.0,
+"superficie_km2": 41.10576853028937
+},
+{
+"codgeo": "34285",
+"libgeo": "Saint-Pons-de-Mauchiens",
+"dep": "34",
+"population": 641.0,
+"superficie_km2": 13.33699794697755
+},
+{
+"codgeo": "34286",
+"libgeo": "Saint-Privat",
+"dep": "34",
+"population": 453.0,
+"superficie_km2": 26.770597453002704
+},
+{
+"codgeo": "34287",
+"libgeo": "Saint-Saturnin-de-Lucian",
+"dep": "34",
+"population": 289.0,
+"superficie_km2": 9.823032425790503
+},
+{
+"codgeo": "34288",
+"libgeo": "Saint-Sériès",
+"dep": "34",
+"population": 972.0,
+"superficie_km2": 4.4281989625725435
+},
+{
+"codgeo": "34289",
+"libgeo": "Saint-Thibéry",
+"dep": "34",
+"population": 3047.0,
+"superficie_km2": 18.636983429900877
+},
+{
+"codgeo": "34290",
+"libgeo": "Saint-Vincent-de-Barbeyrargues",
+"dep": "34",
+"population": 760.0,
+"superficie_km2": 2.102154108131856
+},
+{
+"codgeo": "34291",
+"libgeo": "Saint-Vincent-d'Olargues",
+"dep": "34",
+"population": 354.0,
+"superficie_km2": 15.586478458433149
+},
+{
+"codgeo": "34292",
+"libgeo": "Salasc",
+"dep": "34",
+"population": 342.0,
+"superficie_km2": 9.091480629975992
+},
+{
+"codgeo": "34293",
+"libgeo": "La Salvetat-sur-Agout",
+"dep": "34",
+"population": 1115.0,
+"superficie_km2": 90.00139807190459
+},
+{
+"codgeo": "34294",
+"libgeo": "Saturargues",
+"dep": "34",
+"population": 1021.0,
+"superficie_km2": 6.162617290658552
+},
+{
+"codgeo": "34295",
+"libgeo": "Saussan",
+"dep": "34",
+"population": 1926.0,
+"superficie_km2": 3.46832089771517
+},
+{
+"codgeo": "34296",
+"libgeo": "Saussines",
+"dep": "34",
+"population": null,
+"superficie_km2": null
+},
+{
+"codgeo": "34297",
+"libgeo": "Sauteyrargues",
+"dep": "34",
+"population": 435.0,
+"superficie_km2": 12.883723626790553
+},
+{
+"codgeo": "34298",
+"libgeo": "Sauvian",
+"dep": "34",
+"population": 5498.0,
+"superficie_km2": 13.122829247588358
+},
+{
+"codgeo": "34299",
+"libgeo": "Sérignan",
+"dep": "34",
+"population": 8437.0,
+"superficie_km2": 27.677997094831586
+},
+{
+"codgeo": "34300",
+"libgeo": "Servian",
+"dep": "34",
+"population": 5427.0,
+"superficie_km2": 41.14290313921504
+},
+{
+"codgeo": "34301",
+"libgeo": "Sète",
+"dep": "34",
+"population": 45090.0,
+"superficie_km2": 40.62884668483965
+},
+{
+"codgeo": "34302",
+"libgeo": "Siran",
+"dep": "34",
+"population": 751.0,
+"superficie_km2": 21.107879047070227
+},
+{
+"codgeo": "34303",
+"libgeo": "Sorbs",
+"dep": "34",
+"population": 39.0,
+"superficie_km2": 20.31149641317367
+},
+{
+"codgeo": "34304",
+"libgeo": "Soubès",
+"dep": "34",
+"population": 954.0,
+"superficie_km2": 12.344884978539776
+},
+{
+"codgeo": "34305",
+"libgeo": "Le Soulié",
+"dep": "34",
+"population": 133.0,
+"superficie_km2": 40.53446288715307
+},
+{
+"codgeo": "34306",
+"libgeo": "Soumont",
+"dep": "34",
+"population": 243.0,
+"superficie_km2": 11.183835327418466
+},
+{
+"codgeo": "34307",
+"libgeo": "Sussargues",
+"dep": "34",
+"population": 2817.0,
+"superficie_km2": 6.337872014445513
+},
+{
+"codgeo": "34308",
+"libgeo": "Taussac-la-Billière",
+"dep": "34",
+"population": 462.0,
+"superficie_km2": 14.667990009773066
+},
+{
+"codgeo": "34309",
+"libgeo": "Teyran",
+"dep": "34",
+"population": 4729.0,
+"superficie_km2": 10.038232642094103
+},
+{
+"codgeo": "34310",
+"libgeo": "Thézan-lès-Béziers",
+"dep": "34",
+"population": 3070.0,
+"superficie_km2": 13.744937098767831
+},
+{
+"codgeo": "34311",
+"libgeo": "Tourbes",
+"dep": "34",
+"population": 1875.0,
+"superficie_km2": 15.983148287932286
+},
+{
+"codgeo": "34312",
+"libgeo": "La Tour-sur-Orb",
+"dep": "34",
+"population": 1346.0,
+"superficie_km2": 30.62821283428071
+},
+{
+"codgeo": "34313",
+"libgeo": "Tressan",
+"dep": "34",
+"population": 688.0,
+"superficie_km2": 3.7497187120115996
+},
+{
+"codgeo": "34314",
+"libgeo": "Le Triadou",
+"dep": "34",
+"population": 692.0,
+"superficie_km2": 6.213032679858876
+},
+{
+"codgeo": "34315",
+"libgeo": "Usclas-d'Hérault",
+"dep": "34",
+"population": 438.0,
+"superficie_km2": 2.715339338000476
+},
+{
+"codgeo": "34316",
+"libgeo": "Usclas-du-Bosc",
+"dep": "34",
+"population": 248.0,
+"superficie_km2": 4.623258811117957
+},
+{
+"codgeo": "34317",
+"libgeo": "La Vacquerie-et-Saint-Martin-de-Castries",
+"dep": "34",
+"population": 202.0,
+"superficie_km2": 43.55930887537247
+},
+{
+"codgeo": "34318",
+"libgeo": "Vacquières",
+"dep": "34",
+"population": 757.0,
+"superficie_km2": 14.760156046091574
+},
+{
+"codgeo": "34319",
+"libgeo": "Vailhan",
+"dep": "34",
+"population": 142.0,
+"superficie_km2": 11.340316443360797
+},
+{
+"codgeo": "34320",
+"libgeo": "Vailhauquès",
+"dep": "34",
+"population": 2684.0,
+"superficie_km2": 16.244947280851076
+},
+{
+"codgeo": "34321",
+"libgeo": "Valergues",
+"dep": "34",
+"population": 2173.0,
+"superficie_km2": 5.226696206143783
+},
+{
+"codgeo": "34322",
+"libgeo": "Valflaunès",
+"dep": "34",
+"population": 793.0,
+"superficie_km2": 21.190787219078995
+},
+{
+"codgeo": "34323",
+"libgeo": "Valmascle",
+"dep": "34",
+"population": 51.0,
+"superficie_km2": 6.871475714353838
+},
+{
+"codgeo": "34324",
+"libgeo": "Valras-Plage",
+"dep": "34",
+"population": 4300.0,
+"superficie_km2": 2.947172764551039
+},
+{
+"codgeo": "34325",
+"libgeo": "Valros",
+"dep": "34",
+"population": 1665.0,
+"superficie_km2": 6.682347088067308
+},
+{
+"codgeo": "34326",
+"libgeo": "Vélieux",
+"dep": "34",
+"population": 102.0,
+"superficie_km2": 10.008138136110967
+},
+{
+"codgeo": "34327",
+"libgeo": "Vendargues",
+"dep": "34",
+"population": 7157.0,
+"superficie_km2": 9.268359992902207
+},
+{
+"codgeo": "34328",
+"libgeo": "Vendémian",
+"dep": "34",
+"population": 1157.0,
+"superficie_km2": 17.07459633524244
+},
+{
+"codgeo": "34329",
+"libgeo": "Vendres",
+"dep": "34",
+"population": 2671.0,
+"superficie_km2": 37.91327525553041
+},
+{
+"codgeo": "34331",
+"libgeo": "Verreries-de-Moussans",
+"dep": "34",
+"population": null,
+"superficie_km2": null
+},
+{
+"codgeo": "34332",
+"libgeo": "Vias",
+"dep": "34",
+"population": 5960.0,
+"superficie_km2": 32.8702664239525
+},
+{
+"codgeo": "34333",
+"libgeo": "Vic-la-Gardiole",
+"dep": "34",
+"population": 3413.0,
+"superficie_km2": 30.62259106709483
+},
+{
+"codgeo": "34334",
+"libgeo": "Vieussan",
+"dep": "34",
+"population": 268.0,
+"superficie_km2": 27.899902171076786
+},
+{
+"codgeo": "34335",
+"libgeo": "Villemagne-l'Argentière",
+"dep": "34",
+"population": 420.0,
+"superficie_km2": 8.135702844854901
+},
+{
+"codgeo": "34336",
+"libgeo": "Villeneuve-lès-Béziers",
+"dep": "34",
+"population": 4283.0,
+"superficie_km2": 17.278681956791324
+},
+{
+"codgeo": "34337",
+"libgeo": "Villeneuve-lès-Maguelone",
+"dep": "34",
+"population": 10406.0,
+"superficie_km2": 31.153770702255212
+},
+{
+"codgeo": "34338",
+"libgeo": "Villeneuvette",
+"dep": "34",
+"population": 66.0,
+"superficie_km2": 3.095556472711845
+},
+{
+"codgeo": "34339",
+"libgeo": "Villespassans",
+"dep": "34",
+"population": 186.0,
+"superficie_km2": 13.934375180129072
+},
+{
+"codgeo": "34340",
+"libgeo": "Villetelle",
+"dep": "34",
+"population": 1698.0,
+"superficie_km2": 5.431117070689559
+},
+{
+"codgeo": "34341",
+"libgeo": "Villeveyrac",
+"dep": "34",
+"population": 3953.0,
+"superficie_km2": 37.31130777210899
+},
+{
+"codgeo": "34342",
+"libgeo": "Viols-en-Laval",
+"dep": "34",
+"population": 216.0,
+"superficie_km2": 16.048701187854157
+},
+{
+"codgeo": "34343",
+"libgeo": "Viols-le-Fort",
+"dep": "34",
+"population": 1223.0,
+"superficie_km2": 16.83768268788757
+},
+{
+"codgeo": "34344",
+"libgeo": "La Grande-Motte",
+"dep": "34",
+"population": 8508.0,
+"superficie_km2": 13.66146159245705
+}
+]
