@@ -5,7 +5,7 @@ config_charge.R
 
 # Données générées 
 data/raw/
-models/
+
 
 # Fichiers R temporaires
 .Rhistory
