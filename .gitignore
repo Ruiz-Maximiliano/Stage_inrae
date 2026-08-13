@@ -4,7 +4,7 @@ config.R
 # Données générées (trop lourdes pour git)
 data/raw/
 data/meteo_history_backup.csv
-models/
+
 
 # Fichiers R temporaires
 .Rhistory
