@@ -205,6 +205,16 @@ function renderCommuneWeeklyChart(profile, opts) {
   // ligne, comme "Année en cours" pour l'abondance.
   let tempData = weeksExt.map(w => w.temperature ?? null);
 
+  // Intervalle de prédiction (bande q05-q95 autour de "Année en cours") —
+  // demande utilisateur : ajouter l'intervalle de prédiction aux courbes,
+  // avec sa propre case à cocher. Mêmes unités que "Année en cours"
+  // (ind/piège) : normalisées plus bas avec la MÊME fonction toIndex (donc
+  // même dénominateur régional), pas une échelle à part. Comme pour la
+  // température, disponible seulement pour l'année en cours (pas de q05/q95
+  // sur mean_10y/mean_2y).
+  let q05Data = weeksExt.map(w => w.q05 ?? null);
+  let q95Data = weeksExt.map(w => w.q95 ?? null);
+
   // Prévision saisonnière (test_seasonal_ruiz, jusqu'à ~6 mois) FUSIONNÉE dans
   // LA MÊME série "Année en cours" (continuation de la ligne bleue pointillée,
   // pas un 4e jeu de données séparé) :
@@ -239,12 +249,20 @@ function renderCommuneWeeklyChart(profile, opts) {
         if (idx !== -1 && (tempData[idx] === null || tempData[idx] === undefined) && w.mean_temperature !== null && w.mean_temperature !== undefined) {
           tempData[idx] = w.mean_temperature;
         }
+        // Intervalle : comble aussi les trous, indépendamment de l'abondance/
+        // la température (mêmes clés que api/seasonal.php — abundance_q05/q95).
+        if (idx !== -1 && (q05Data[idx] === null || q05Data[idx] === undefined) && w.abundance_q05 !== null && w.abundance_q05 !== undefined) {
+          q05Data[idx] = w.abundance_q05;
+        }
+        if (idx !== -1 && (q95Data[idx] === null || q95Data[idx] === undefined) && w.abundance_q95 !== null && w.abundance_q95 !== undefined) {
+          q95Data[idx] = w.abundance_q95;
+        }
         return;
       }
       // Année suivante : semaine 1, 2, 3... de cette nouvelle année (pas de
       // numérotation continue) — voir isNextYear/nextYear, utilisés plus bas
       // pour positionner la ligne de bascule d'année.
-      extra.push({ week: wk, isSeasonal: true, is_forecast: true, isNextYear: true, nextYear: wYear, current: w.abundance_q50, temperature: w.mean_temperature ?? null, mean_2y: null, mean_10y: null });
+      extra.push({ week: wk, isSeasonal: true, is_forecast: true, isNextYear: true, nextYear: wYear, current: w.abundance_q50, temperature: w.mean_temperature ?? null, q05: w.abundance_q05 ?? null, q95: w.abundance_q95 ?? null, mean_2y: null, mean_10y: null });
     });
     // Tri chronologique (année puis semaine) — assure l'ordre même si
     // seasonalData.weeks n'était pas déjà trié, et même si l'horizon
@@ -254,6 +272,8 @@ function renderCommuneWeeklyChart(profile, opts) {
       weeksExt.push(e);
       currentData.push(e.current);
       tempData.push(e.temperature);
+      q05Data.push(e.q05);
+      q95Data.push(e.q95);
       mean2Data.push(null);
       mean10Data.push(null);
     });
@@ -318,6 +338,12 @@ function renderCommuneWeeklyChart(profile, opts) {
   const tempSpan = (tempMax - tempMin) || 1; // filet anti division par zéro
   const toTempIndex = v => (v === null || v === undefined || isNaN(v)) ? null : Math.min(100, Math.max(0, ((v - tempMin) / tempSpan) * 100));
   const tempIdx = tempData.map((v, i) => (!cwForecastVisible && weeksExt[i].is_forecast) ? null : toTempIndex(v));
+
+  // Intervalle de prédiction normalisé — MÊME fonction toIndex que "Année en
+  // cours" (même unité ind/piège, même dénominateur régional), pas une
+  // échelle à part. Masqué comme les autres tant que "Prévision" est décochée.
+  const q05Idx = q05Data.map((v, i) => (!cwForecastVisible && weeksExt[i].is_forecast) ? null : toIndex(v));
+  const q95Idx = q95Data.map((v, i) => (!cwForecastVisible && weeksExt[i].is_forecast) ? null : toIndex(v));
 
   // Vue élargie : donne une largeur MINIMALE au conteneur du graphique (au
   // lieu de width:100%), pour que #cw-canvas-wrap devienne scrollable
@@ -468,6 +494,53 @@ function renderCommuneWeeklyChart(profile, opts) {
           _baseBorderColor: 'rgba(249,115,22,1)',
           _basePointBg: 'rgba(249,115,22,1)',
           _baseBorderWidth: 1.5
+        },
+        {
+          // Intervalle de prédiction — borne HAUTE (q95). Sert de référence de
+          // fill pour le dataset suivant (q05), avec un léger contour pointillé
+          // pour que la bande reste repérable même là où elle est fine (le
+          // remplissage seul peut disparaître visuellement sous l'épaisseur du
+          // trait "Année en cours" si les 2 se touchent presque).
+          // BUG CORRIGÉ ("la bande ne se voit pas") — order:0 la dessinait EN
+          // PREMIER (donc SOUS toutes les autres lignes, voir order:1-4 plus
+          // haut) : la ligne "Année en cours" (order:1, opaque, 2px) la
+          // recouvrait entièrement partout où l'intervalle était étroit.
+          // order:10 = dessinée EN DERNIER (par-dessus tout), remplissage
+          // translucide donc les lignes restent visibles par transparence.
+          label: 'Intervalle de prédiction (haut, q95)',
+          data: q95Idx,
+          rawData: q95Data,
+          rawUnit: ' ind/piège',
+          hidden: !cwIntervalVisible,
+          borderColor: 'rgba(26,84,144,0.45)',
+          borderWidth: 1,
+          borderDash: [2, 2],
+          pointRadius: 0,
+          spanGaps: true,
+          tension: 0.25,
+          fill: false,
+          order: 10,
+          clip: false
+        },
+        {
+          // Intervalle de prédiction — borne BASSE (q05). fill:4 = remplit
+          // jusqu'au dataset d'index 4 (la borne haute juste au-dessus),
+          // formant la bande de l'intervalle de prédiction entre les deux.
+          label: 'Intervalle de prédiction (bas, q05)',
+          data: q05Idx,
+          rawData: q05Data,
+          rawUnit: ' ind/piège',
+          hidden: !cwIntervalVisible,
+          borderColor: 'rgba(26,84,144,0.45)',
+          borderWidth: 1,
+          borderDash: [2, 2],
+          pointRadius: 0,
+          spanGaps: true,
+          tension: 0.25,
+          fill: 4,
+          backgroundColor: 'rgba(26,84,144,0.20)',
+          order: 10,
+          clip: false
         }
   ];
 
@@ -639,6 +712,21 @@ function toggleForecastVisibility(checkbox) {
   // change ici que la visibilité de quelques points (pas besoin de tout
   // reconstruire l'instance Chart.js).
   if (currentProfile) renderCommuneWeeklyChart(currentProfile, { inPlace: true });
+}
+
+
+// Case "Intervalle de prédiction" — pilote DEUX datasets à la fois (bornes
+// haute/basse formant le fill, index 4 et 5, voir baseDatasets plus haut),
+// donc pas géré par toggleDatasetVisibility (1 case = 1 dataset). Simple
+// bascule de visibilité côté Chart.js (setDatasetVisibility), pas besoin de
+// reconstruire le graphique : les données q05Idx/q95Idx sont déjà calculées
+// à chaque rendu, seule leur visibilité change.
+function toggleIntervalVisibility(checkbox) {
+  cwIntervalVisible = checkbox.checked;
+  if (!communeWeeklyChart) return;
+  communeWeeklyChart.setDatasetVisibility(4, cwIntervalVisible);
+  communeWeeklyChart.setDatasetVisibility(5, cwIntervalVisible);
+  communeWeeklyChart.update('none');
 }
 
 

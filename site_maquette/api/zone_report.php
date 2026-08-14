@@ -174,6 +174,12 @@ try {
             'week'        => $w,
             'month'       => $monthLabel,
             'current'     => $cur,
+            // q05/q95 : mêmes clés que commune_weekly_profile.php (déjà calculées
+            // ci-dessus dans abundance_q05/q95, moyenne simple entre communes de
+            // la zone) — sert à l'intervalle de prédiction du graphique (case à
+            // cocher, demande utilisateur).
+            'q05'         => $currentByWeek[$w]['abundance_q05'] ?? null,
+            'q95'         => $currentByWeek[$w]['abundance_q95'] ?? null,
             'temperature' => $currentByWeek[$w]['temperature'] ?? null,
             'is_forecast' => $currentByWeek[$w]['is_forecast'] ?? null,
             'mean_2y'     => $mean2[$w]  ?? null,

@@ -125,3 +125,10 @@ let cwDatasetVisibility = [true, false, false, false]; // par défaut, seule "An
 // pendant que cwDatasetVisibility[0] continue de gérer l'affichage/masquage
 // de TOUTE la série via la case "Année en cours".
 let cwForecastVisible = true;
+
+// Case "Intervalle de prédiction" (bande q05-q95 autour de l'année en cours) —
+// demande utilisateur : ajouter l'intervalle de prédiction aux courbes, avec
+// sa propre case à cocher. Piloté à part (pas via cwDatasetVisibility) car
+// c'est une PAIRE de datasets (borne haute/basse formant un fill), pas une
+// simple courbe — voir renderCommuneWeeklyChart dans commune-chart.js.
+let cwIntervalVisible = false;

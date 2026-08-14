@@ -6,7 +6,7 @@
 <title>OMEES — Tableau de Bord Régional Élus</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="assets/css/responsive.css"/>
-<link rel="stylesheet" href="css/styles.css?v=1786618898"/>
+<link rel="stylesheet" href="css/styles.css?v=1786712852"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- Turf.js : fusionne (dissolve) les polygones communaux en un seul polygone
@@ -187,6 +187,15 @@
         <input type="checkbox" data-ds="3" onchange="toggleDatasetVisibility(this)">
         <span style="display:inline-block;width:10px;height:2px;background:#f97316;border-top:1px dotted #f97316"></span>Température
       </label>
+      <!-- Intervalle de prédiction (bande q05-q95 autour de "Année en cours")
+           — demande utilisateur. Pilote 2 datasets à la fois (bornes haute/
+           basse formant le fill), donc pas de data-ds/toggleDatasetVisibility
+           générique (1 case = 1 dataset) : case dédiée, voir
+           toggleIntervalVisibility() dans commune-chart.js. -->
+      <label style="cursor:pointer;display:flex;align-items:center;gap:4px">
+        <input type="checkbox" id="cw-interval-toggle" onchange="toggleIntervalVisibility(this)">
+        <span style="display:inline-block;width:10px;height:8px;background:rgba(26,84,144,0.25);border:1px solid rgba(26,84,144,0.6)"></span>Intervalle de prédiction
+      </label>
       <!-- "Prévision" regroupé avec "Prévision saisonnière" (même thème :
            tout ce qui est projeté dans le futur), à droite du bloc données
            réelles/moyennes historiques.
@@ -228,17 +237,17 @@
   L'ORDRE compte : main.js doit être chargé EN DERNIER, il démarre le
   dashboard (initMap()+initDashboard()) une fois que tout le reste est défini.
 -->
-<script src="js/config.js?v=1786618898"></script>
-<script src="js/utils.js?v=1786618898"></script>
-<script src="js/state.js?v=1786618898"></script>
-<script src="js/api.js?v=1786618898"></script>
-<script src="js/map.js?v=1786618898"></script>
-<script src="js/data-loader.js?v=1786618898"></script>
-<script src="js/right-panel.js?v=1786618898"></script>
-<script src="js/chart-modal.js?v=1786618898"></script>
-<script src="js/commune-chart.js?v=1786618898"></script>
-<script src="js/commune-modal.js?v=1786618898"></script>
-<script src="js/report.js?v=1786618898"></script>
-<script src="js/main.js?v=1786618898"></script>
+<script src="js/config.js?v=1786712852"></script>
+<script src="js/utils.js?v=1786712852"></script>
+<script src="js/state.js?v=1786712852"></script>
+<script src="js/api.js?v=1786712852"></script>
+<script src="js/map.js?v=1786712852"></script>
+<script src="js/data-loader.js?v=1786712852"></script>
+<script src="js/right-panel.js?v=1786712852"></script>
+<script src="js/chart-modal.js?v=1786712852"></script>
+<script src="js/commune-chart.js?v=1786712852"></script>
+<script src="js/commune-modal.js?v=1786712852"></script>
+<script src="js/report.js?v=1786712852"></script>
+<script src="js/main.js?v=1786712852"></script>
 </body>
 </html>

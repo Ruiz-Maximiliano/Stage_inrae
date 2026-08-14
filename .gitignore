@@ -4,7 +4,10 @@ config.R
 # Données générées (trop lourdes pour git)
 data/raw/
 data/meteo_history_backup.csv
+models/
 
+# Scripts abandonnés (SHAP) — gardés localement comme référence, jamais commités
+scripts/legacy/
 
 # Fichiers R temporaires
 .Rhistory

@@ -27,8 +27,11 @@ async function openCommuneWeeklyModal(codgeo, nom) {
   seasonalEnabled = false;
   cwDatasetVisibility = [true, false, false, false]; // nouvelle commune = repart sur "Année en cours" seule (moyennes + température off par défaut)
   cwForecastVisible = true;
+  cwIntervalVisible = false;
   const forecastCheckbox = document.getElementById('cw-forecast-toggle');
   if (forecastCheckbox) forecastCheckbox.checked = true;
+  const intervalCheckbox = document.getElementById('cw-interval-toggle');
+  if (intervalCheckbox) intervalCheckbox.checked = false;
   const seasonalCheckbox = document.getElementById('cw-seasonal-toggle');
   if (seasonalCheckbox) {
     seasonalCheckbox.checked = false;
@@ -62,6 +65,16 @@ async function openCommuneWeeklyModal(codgeo, nom) {
     if (gapWeeks.length) {
       console.warn(`[commune ${codgeo}] semaines sans donnée de prévision (trou possible dans predictions) :`, gapWeeks.map(w => w.week));
     }
+    // Diagnostic — intervalle de prédiction (q05/q95) : combien de semaines
+    // RÉELLES (is_forecast=false) ont une valeur q05/q95 vs combien de
+    // semaines de PRÉVISION. Si le compte "réel" est à 0, ce n'est pas un bug
+    // d'affichage côté front (rien ne filtre l'intervalle sur is_forecast) —
+    // la base ne calcule/stocke simplement pas de quantiles pour les dates
+    // déjà observées, seulement pour l'horizon de prévision.
+    const withQ = profile.weeks.filter(w => w.q05 !== null && w.q05 !== undefined);
+    const realWithQ = withQ.filter(w => !w.is_forecast).length;
+    const forecastWithQ = withQ.filter(w => w.is_forecast).length;
+    console.log(`[commune ${codgeo}] intervalle q05/q95 — semaines réelles avec donnée : ${realWithQ}, semaines prévision avec donnée : ${forecastWithQ}`);
     console.log(`[commune ${codgeo}] profile reçu :`, profile);
     renderCommuneWeeklyChart(profile);
   } catch (e) {
@@ -87,8 +100,11 @@ async function openDeptWeeklyModal(deptCode) {
   seasonalEnabled = false;
   cwDatasetVisibility = [true, false, false, false]; // nouveau département = repart sur "Année en cours" seule (température incluse — zone_report.php la renvoie aussi)
   cwForecastVisible = true;
+  cwIntervalVisible = false;
   const forecastCheckbox = document.getElementById('cw-forecast-toggle');
   if (forecastCheckbox) forecastCheckbox.checked = true;
+  const intervalCheckbox = document.getElementById('cw-interval-toggle');
+  if (intervalCheckbox) intervalCheckbox.checked = false;
   const seasonalCheckbox = document.getElementById('cw-seasonal-toggle');
   if (seasonalCheckbox) {
     seasonalCheckbox.checked = false;

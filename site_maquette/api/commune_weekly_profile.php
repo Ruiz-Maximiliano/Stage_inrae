@@ -56,8 +56,13 @@ try {
     // colonne (vues matérialisées limitées à combined_abundance_q50, voir
     // refresh_mean_views()), donc pas de moyenne historique de température
     // disponible ici, seulement l'année en cours.
+    // combined_abundance_q05/q95 ajoutées (demande utilisateur : intervalle de
+    // prédiction, case à cocher) — mêmes colonnes déjà utilisées par
+    // zone_report.php, confirmant qu'elles existent bien sur TABLE. Comme pour
+    // la température, pas d'équivalent sur mean_10y/mean_2y (vues limitées à
+    // combined_abundance_q50) : l'intervalle n'existe que pour l'année en cours.
     $stmt = $pdo->prepare("
-        SELECT date, combined_abundance_q50, mean_temperature
+        SELECT date, combined_abundance_q50, combined_abundance_q05, combined_abundance_q95, mean_temperature
         FROM " . TABLE . "
         WHERE codgeo = :codgeo
           AND EXTRACT(YEAR FROM date) = :year
@@ -74,6 +79,8 @@ try {
         $isForecast = $r['date'] > $today;
         $currentByWeek[$w] = [
             'value'       => $r['combined_abundance_q50'] !== null ? (float) $r['combined_abundance_q50'] : null,
+            'q05'         => $r['combined_abundance_q05'] !== null ? (float) $r['combined_abundance_q05'] : null,
+            'q95'         => $r['combined_abundance_q95'] !== null ? (float) $r['combined_abundance_q95'] : null,
             'temperature' => $r['mean_temperature']        !== null ? (float) $r['mean_temperature']        : null,
             'is_forecast' => $isForecast,
         ];
@@ -108,6 +115,11 @@ try {
         $weeks[] = [
             'week'        => $w,
             'current'     => $currentByWeek[$w]['value']       ?? null,
+            // q05/q95 : oubliés dans le output ci-dessous lors du 1er passage —
+            // étaient déjà dans le SELECT/$currentByWeek plus haut, mais jamais
+            // recopiés ici, donc jamais renvoyés par l'API (bug corrigé).
+            'q05'         => $currentByWeek[$w]['q05']         ?? null,
+            'q95'         => $currentByWeek[$w]['q95']         ?? null,
             'temperature' => $currentByWeek[$w]['temperature'] ?? null,
             'is_forecast' => $currentByWeek[$w]['is_forecast'] ?? null,
             'mean_10y'    => $mean10[$w] ?? null,
