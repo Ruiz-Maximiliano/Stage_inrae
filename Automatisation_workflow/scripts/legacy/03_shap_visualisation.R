@@ -11,7 +11,7 @@
 #   avoir lancé 02_hebdomadaire.R (ou main.R). Il a besoin que l'objet
 #   `df_meteo_predictions` soit encore présent dans l'environnement, car les
 #   colonnes shap_* n'existent qu'en mémoire (elles ne sont pas relues depuis la BD
-#   ici — pour ça, voir la table `db_layer_shap` publiée par 02_hebdomadaire.R).
+#   ici — pour ça, voir la table `db_layer` publiée par 02_hebdomadaire.R).
 #
 # PARAMÈTRES D'ENTRÉE (à fournir) :
 #   - Aucun à modifier ici. Tout est piloté par predictors_abundance/predictors_presence
@@ -27,7 +27,7 @@
 #   - predictors_presence       : vecteur de prédicteurs présence  (02_hebdomadaire.R)
 #   - colonnes shap_abund_*, shap_pres_*, shap_combined_*, shap_abundcv_* : valeurs
 #     SHAP par variable et par modèle, calculées dans le bloc "Calcul des valeurs SHAP"
-#     de 02_hebdomadaire.R (voir aussi compute_shap() dans 00_functions.R)
+#     de 02_hebdomadaire.R (voir aussi compute_shap() dans 00_functions_models.R)
 # ============================================================
 
 library(here)
